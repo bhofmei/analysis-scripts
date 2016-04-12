@@ -1,0 +1,4 @@
+*.pyc
+jbrowse
+**/__pycache__
+
