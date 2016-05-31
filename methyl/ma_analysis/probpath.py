@@ -75,11 +75,13 @@ class ProbPath:
 		# end for i
 	
 	def _tracebackHelper( self, i, j ):
+		sj = np.nonzero(self.data.columns.values == 'score')[0][0]
+		si = np.nonzero(self.data.columns.values == 'iprediction')[0][0]
 		labels = ['mother','MDV','father']
 		score = self.probMat[i][j]
 		label = labels[j]
-		self.data['score'].iloc[i] = score
-		self.data['iprediction'].iloc[i] = label
+		self.data.iloc[i,sj] = score
+		self.data.iloc[i,si] = label
 		return self.traceMat[i][j]
 	
 	def _printTraceMat( self ):

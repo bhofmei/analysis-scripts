@@ -2,6 +2,7 @@ import sys, math, glob, multiprocessing, subprocess, os, bisect, random
 import numpy as np
 import pandas as pd
 from sklearn import linear_model
+from sklearn.tree import DecisionTreeClassifier
 import bth_util
 from probpath import ProbPath
 
@@ -89,11 +90,11 @@ def classLogRegImproved( df, pla=None ):
 	dfsm = dfs.loc[[pla[0], pla[1]]]
 	mdv = dfsm.apply(np.mean,reduce=None)
 	dfs.loc['MDV'] = mdv.transpose()
-	clf = linear_model.LogisticRegression()
+	clf = DecisionTreeClassifier()
 	# get training set
 	train = dfs.loc[[pla[0], pla[1], 'MDV']]
 	tr_cl = np.array(train.index,dtype=np.str_)
-	tr_cl = renameParents( tr_cl, pla )
+	tr_cl = renameParentsLabel( tr_cl, pla )
 	# create model and fit initial data
 	clf = linear_model.LogisticRegression()
 	clf.fit( train.values, tr_cl )
@@ -127,6 +128,17 @@ def renameParents( inAr, replaceAr ):
 		i = np.where( inAr == replaceAr[1] )
 		inAr[i[0][0]] = 'father'
 	return inAr
+
+def renameParentsLabel( inAr, replaceAr ):
+	outAr = [[0]]*3
+	i = np.where( inAr == replaceAr[0] )
+	outAr[i[0][0]] = [1,0]	# mother
+	i = np.where( inAr == replaceAr[1] )
+	outAr[i[0][0]] = [0,1]	# father
+	i = np.where( inAr == 'MDV' )
+	outAr[i[0][0]] = [1,1]	# MDV
+	print( outAr )
+	return np.array( outAr )
 
 def computeTransitions( df, ignoreLabelsAr ):
 	# nine transition types
@@ -190,11 +202,11 @@ def determineOutputFileName( inFileStr, outID, binSize, isSmoothing ):
 	outBaseName = os.path.basename( inFileStr )
 	if outID == None:
 		if '_wm_pos_' in inFileStr:
-			outFileStr = outBaseName.replace( '_wm_pos_', '_logreg_{:s}_'.format( bth_util.binSizeToStr(binSize) ) )
+			outFileStr = outBaseName.replace( '_wm_pos_', '_logreg-ml_{:s}_'.format( bth_util.binSizeToStr(binSize) ) )
 		else:
-			outFileStr = 'out_logreg_{:s}.tsv'.format( bth_util.binSizeToStr(binSize) )
+			outFileStr = 'out_logreg-ml_{:s}.tsv'.format( bth_util.binSizeToStr(binSize) )
 	else:
-		outFileStr = '{:s}_logreg_{:s}.tsv'.format( outID, bth_util.binSizeToStr(binSize) )
+		outFileStr = '{:s}_logreg-ml_{:s}.tsv'.format( outID, bth_util.binSizeToStr(binSize) )
 	if isSmoothing:
 		outFileStr = outFileStr.replace( '.tsv', '_opt.tsv' )
 	return outFileStr
