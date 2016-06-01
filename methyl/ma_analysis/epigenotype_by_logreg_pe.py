@@ -16,6 +16,7 @@ def processInputs( inFileStr, numProc, binSize, outID, parentLabelAr, isSmoothin
 	print( 'Bin size:', bth_util.binSizeToStr( binSize ) )
 	print( 'Mother label:', parentLabelAr[0] )
 	print( 'Father label:', parentLabelAr[1] )
+	info += '; smoothing:{:s}\n'.format( str(isSmoothing) )
 
 	# build data frame
 	df = pd.read_table( inFileStr, header=1 )
@@ -57,7 +58,9 @@ def processInputs( inFileStr, numProc, binSize, outID, parentLabelAr, isSmoothin
 	outFileStr = determineOutputFileName( inFileStr, outID, binSize, isSmoothing )
 	# write output
 	print( 'Writing output to', outFileStr )
-	results.to_csv( outFileStr, sep='\t' )
+	with open( outFileStr, 'w' ) as f:
+		f.write(info)
+	results.to_csv( outFileStr, sep='\t', mode='a' )
 	print( 'Done' )
 
 def checkParents( indexAr, parentLabelAr ):
