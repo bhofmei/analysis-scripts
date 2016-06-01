@@ -33,13 +33,12 @@ def processInputs( inFileStr, numProc, binSize, outID, parentLabelAr, isSmoothin
 		print( 'Begin classifying {:d} bins'.format( nbins ) )
 		res_class = dfg.apply( classLogRegImproved, pla=parentLabelAr )
 	res_class.reset_index(inplace=True)
-	#print( 'Finished processing' )
 	
 	# smooth by sample
 	if isSmoothing:
-		ignoreAr = parentLabelAr + ['MDV']
+		ignoreAr = parentLabelAr + ['MPV']
 		transProbMat = computeTransitions( res_class, ignoreAr )
-		_printTransMat( transProbMat )
+		#_printTransMat( transProbMat )
 		groups = res_class.groupby( 'sample' )
 		nsamples = len(groups.groups)
 	
@@ -50,7 +49,6 @@ def processInputs( inFileStr, numProc, binSize, outID, parentLabelAr, isSmoothin
 		else:
 			print( 'Begin smoothing {:d} samples'.format( nsamples ) )
 			results = groups.apply( findOptimalPath, trans=transProbMat )
-		#print( 'Finished processing' )
 		results.set_index( ['bin', 'sample'], inplace=True )
 	else:
 		results = res_class
@@ -88,10 +86,10 @@ def classLogRegImproved( df, pla=None ):
 	dfs = df.pivot(index='sample',columns='pos',values='wei.meth')
 	dfsm = dfs.loc[[pla[0], pla[1]]]
 	mdv = dfsm.apply(np.mean,reduce=None)
-	dfs.loc['MDV'] = mdv.transpose()
+	dfs.loc['MPV'] = mdv.transpose()
 	clf = linear_model.LogisticRegression()
 	# get training set
-	train = dfs.loc[[pla[0], pla[1], 'MDV']]
+	train = dfs.loc[[pla[0], pla[1], 'MPV']]
 	tr_cl = np.array(train.index,dtype=np.str_)
 	tr_cl = renameParents( tr_cl, pla )
 	# create model and fit initial data
@@ -102,10 +100,8 @@ def classLogRegImproved( df, pla=None ):
 	#probs = clf.predict_proba( dfs )
 	##### using log probabilities bc thats what we want for viterbi algorithm
 	probs = clf.predict_log_proba( dfs )
-	#dec = clf.decision_function( dfs )
 	outdf = pd.DataFrame( probs, dfs.index, clf.classes_, None, True )
 	outdf['prediction'] = pre
-	#outdf['sample'] = dfs.index
 	return outdf
 
 def classLogRegImprovedMulti( gr, pla=None ):
@@ -130,7 +126,7 @@ def renameParents( inAr, replaceAr ):
 
 def computeTransitions( df, ignoreLabelsAr ):
 	# nine transition types
-	labels = ['mother', 'MDV','father','total']
+	labels = ['mother', 'MPV','father','total']
 	transCountDict = {}
 	for x in labels:
 		transCountDict[x] = {}
@@ -170,7 +166,6 @@ def runMulti( groups, numProc, transitions ):
 def findOptimalPathMulti( gr, trans=None ):
 	name, df = gr
 	res = findOptimalPath( df, trans )
-	res['bin']  = res.index
 	res['sample'] = name
 	return res
 
