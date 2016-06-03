@@ -4,19 +4,22 @@ import pandas as pd
 from sklearn import linear_model
 import bth_util
 from probpath import ProbPath
+from simpletransitions import SimpleTransitions
 
-# Usage: python epigenotype_by_logreg_pe.py [-n=] [-p=num_proc] [-o=out_id] [-b=bin_size] [-m=mother_sample] [-f=father_sample] <input_file>
+# Usage: python epigenotype_by_logreg_pe.py [-n] [-u] [-p=num_proc] [-o=out_id] [-b=bin_size] [-m=mother_sample] [-f=father_sample] <input_file>
 
 NUMPROC=1
 BINSIZE=100000
 
-def processInputs( inFileStr, numProc, binSize, outID, parentLabelAr, isSmoothing ):
+def processInputs( inFileStr, numProc, binSize, outID, parentLabelAr, isSmoothing, isUniform ):
 	info = '#from_script:epigenotype_by_logreg.py; in_file:{:s}; bin_size:{:s}'.format( os.path.basename( inFileStr), bth_util.binSizeToStr( binSize ) )
 	print( 'Weighted methylation file:', os.path.basename( inFileStr ) )
 	print( 'Bin size:', bth_util.binSizeToStr( binSize ) )
 	print( 'Mother label:', parentLabelAr[0] )
 	print( 'Father label:', parentLabelAr[1] )
-	info += '; smoothing:{:s}\n'.format( str(isSmoothing) )
+	print( 'Smoothing:', str(isSmoothing) )
+	print( 'Uniform classification probabilities:', str( isUniform ) )
+	info += '; smoothing:{:s}; uni_class_prob:{:s}\n'.format( str(isSmoothing), str(isUniform) )
 
 	# build data frame
 	df = pd.read_table( inFileStr, header=1 )
@@ -29,16 +32,18 @@ def processInputs( inFileStr, numProc, binSize, outID, parentLabelAr, isSmoothin
 	dfg = df.groupby('bin')
 	if numProc > 1:
 		print( 'Begin classifying {:d} bins with {:d} processors'.format( nbins, numProc ) )
-		res_class = runMultiprocessing( dfg, numProc, parentLabelAr )
+		res_class = runMultiprocessing( dfg, numProc, parentLabelAr, isUniform )
 	else:
 		print( 'Begin classifying {:d} bins'.format( nbins ) )
-		res_class = dfg.apply( classLogRegImproved, pla=parentLabelAr )
+		res_class = dfg.apply( classLogRegImproved, pla=parentLabelAr, u=isUniform )
 	res_class.reset_index(inplace=True)
 	
 	# smooth by sample
 	if isSmoothing:
 		ignoreAr = parentLabelAr + ['MPV']
-		transProbMat = computeTransitions( res_class, ignoreAr )
+		#transProbMat = computeTransitions( res_class, ignoreAr )
+		transition = SimpleTransitions( res_class, ignore=ignoreAr )
+		transProbMat = transition.run()
 		#_printTransMat( transProbMat )
 		groups = res_class.groupby( 'sample' )
 		nsamples = len(groups.groups)
@@ -55,7 +60,7 @@ def processInputs( inFileStr, numProc, binSize, outID, parentLabelAr, isSmoothin
 		results = res_class
 	
 	# output file
-	outFileStr = determineOutputFileName( inFileStr, outID, binSize, isSmoothing )
+	outFileStr = determineOutputFileName( inFileStr, outID, binSize, isSmoothing, isUniform )
 	# write output
 	print( 'Writing output to', outFileStr )
 	with open( outFileStr, 'w' ) as f:
@@ -77,14 +82,14 @@ def checkParents( indexAr, parentLabelAr ):
 		print( 'Samples:', indexAr )
 		exit()
 
-def runMultiprocessing( dfg, numProc, parentLabelAr ):
+def runMultiprocessing( dfg, numProc, parentLabelAr, isUniform ):
 	from functools import partial
-	mapfunc = partial( classLogRegImprovedMulti, pla=parentLabelAr )
+	mapfunc = partial( classLogRegImprovedMulti, pla=parentLabelAr, u=isUniform )
 	with multiprocessing.Pool(processes=numProc) as p:
 		res = p.map( mapfunc, [group for group in dfg] )
 	return pd.concat( res )
 
-def classLogRegImproved( df, pla=None ):
+def classLogRegImproved( df, pla=None, u=False ):
 	# get MDV
 	dfs = df.pivot(index='sample',columns='pos',values='wei.meth')
 	dfsm = dfs.loc[[pla[0], pla[1]]]
@@ -96,21 +101,23 @@ def classLogRegImproved( df, pla=None ):
 	tr_cl = np.array(train.index,dtype=np.str_)
 	tr_cl = renameParents( tr_cl, pla )
 	# create model and fit initial data
-	clf = linear_model.LogisticRegression()
+	if u:
+		clf = linear_model.LogisticRegression()
+	else:
+		clf = linear_model.LogisticRegression(class_weight={'mother':0.25,'MPV':0.5,'father':0.25})
 	clf.fit( train.values, tr_cl )
 	# get the class probabilities
 	pre = clf.predict( dfs )
-	#probs = clf.predict_proba( dfs )
 	##### using log probabilities bc thats what we want for viterbi algorithm
 	probs = clf.predict_log_proba( dfs )
 	outdf = pd.DataFrame( probs, dfs.index, clf.classes_, None, True )
 	outdf['prediction'] = pre
 	return outdf
 
-def classLogRegImprovedMulti( gr, pla=None ):
+def classLogRegImprovedMulti( gr, pla=None, u=False ):
 	name = gr[0]
 	df = gr[1]
-	rf = classLogRegImproved( df, pla )
+	rf = classLogRegImproved( df, pla, u )
 	rf['bin'] = name
 	rf['sample'] = rf.index
 	rf.set_index( ['bin','sample'],inplace=True )
@@ -172,19 +179,8 @@ def findOptimalPathMulti( gr, trans=None ):
 	res['sample'] = name
 	return res
 
-def _printTransMat( inMat ):
-	outStr = ''
-	lAr = ['m','h','f']
-	headerAr = [ ' {:>9s}'.format( x ) for x in lAr ]
-	outStr += ' '*2 + ''.join(headerAr) + '\n' + ' '*3 + '-'*(3*10) +'\n'
-	for i in range(len(lAr)):
-		tmpStr = ' {:s}|'.format( lAr[i] )
-		transAr = [ ' {:>9.6f}'.format(inMat[i][j]) for j in range(3) ]
-		outStr += tmpStr + ''.join(transAr)+ '|\n'
-	outStr += ' '*3 + '-'*(3*10)
-	print( outStr )
 
-def determineOutputFileName( inFileStr, outID, binSize, isSmoothing ):
+def determineOutputFileName( inFileStr, outID, binSize, isSmoothing, isUniform ):
 	outBaseName = os.path.basename( inFileStr )
 	if outID == None:
 		if '_wm_pos_' in inFileStr:
@@ -193,8 +189,12 @@ def determineOutputFileName( inFileStr, outID, binSize, isSmoothing ):
 			outFileStr = 'out_logreg_{:s}.tsv'.format( bth_util.binSizeToStr(binSize) )
 	else:
 		outFileStr = '{:s}_logreg_{:s}.tsv'.format( outID, bth_util.binSizeToStr(binSize) )
-	if isSmoothing:
+	if isSmoothing and isUniform:
+		outFileStr = outFileStr.replace( '.tsv', '_uni-opt.tsv' )
+	elif isSmoothing:
 		outFileStr = outFileStr.replace( '.tsv', '_opt.tsv' )
+	elif isUniform:
+		outFileStr = outFileStr.replace( '.tsv', '_uni.tsv' )	
 	return outFileStr
 
 def parseInputs( argv ):
@@ -203,9 +203,10 @@ def parseInputs( argv ):
 	outID = None
 	parentLabelAr = ['mother', 'father',0]
 	isSmoothing = True
+	isUniform = False
 	startInd = 0
 
-	for i in range(min(6,len(argv))):
+	for i in range(min(7,len(argv))):
 		if argv[i].startswith( '-o=' ):
 			outID = argv[i][3:]
 			startInd += 1
@@ -234,6 +235,9 @@ def parseInputs( argv ):
 		elif argv[i] == '-n':
 			isSmoothing = False
 			startInd += 1
+		elif argv[i] == '-u':
+			isUniform = True
+			startInd += 1
 		elif argv[i] in [ '-h', '--help', '-help']:
 			printHelp()
 			exit()
@@ -242,7 +246,7 @@ def parseInputs( argv ):
 			exit()
 	# end for
 	inFileStr = argv[startInd]
-	processInputs( inFileStr, numProc, binSize, outID, parentLabelAr, isSmoothing )
+	processInputs( inFileStr, numProc, binSize, outID, parentLabelAr, isSmoothing, isUniform )
 
 def printHelp():
 	print ("Usage: python epigenotype_by_logreg_pe.py [-n] [-p=num_proc] [-o=out_id] [-b=bin_size] [-m=mother_sample] [-f=father_sample] <input_file>")
@@ -250,6 +254,7 @@ def printHelp():
 	print( 'input_file\tfile of of weighted methylation by position for samples' )
 	print( 'Optional:' )
 	print( '-n\t\tturn off smoothing algorithm' )
+	print( '-u\t\tuniform class weights [default 1:2:1 for mother,\n\t\tMPV,father]' )
 	print( '-o=out_id\tidentifier for output file [default out or variation of\n\t\tinput file name]' )
 	print( '-p=num_proc\tnumber of processors' )
 	print( '-m=mother_label\tsample name of mother; for correct classification\n\t\t[default mother]' )

@@ -6,6 +6,7 @@ class ProbPath:
 	def __init__(self, df, transitions ):
 		self.transMat = transitions
 		self.data = df
+		#print(df.iloc[0:4,0:4])
 		self.size = self.data.shape[0]
 		self.probMat = None
 		self.traceMat = None
@@ -24,7 +25,7 @@ class ProbPath:
 		return self.data
 	
 	def _fillMat( self ):
-		labels = ['mother','MDV','father']
+		labels = ['mother','MPV','father']
 		# loop through rows/bin
 		for i in range(self.size):
 			# loop through columns/states
@@ -77,7 +78,7 @@ class ProbPath:
 	def _tracebackHelper( self, i, j ):
 		sj = np.nonzero(self.data.columns.values == 'score')[0][0]
 		si = np.nonzero(self.data.columns.values == 'iprediction')[0][0]
-		labels = ['mother','MDV','father']
+		labels = ['mother','MPV','father']
 		score = self.probMat[i][j]
 		label = labels[j]
 		self.data.iloc[i,sj] = score
