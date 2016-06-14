@@ -3,12 +3,13 @@ import sys, math, glob, multiprocessing, subprocess, os
 # Usage: python3.4 chrom_genome_methylation.py [-f] [-b] [-p=num_proc] [-o=out_prefix] [-c=chromosomes] [-m=meth_types] <allC_path> <sample_name> [sample_name]*
 # reports the weighted methylation (in all contexts) of samples for each chromosome and for the entire genome
 
-NUMPROC=2
+NUMPROC=1
 CHRMLIST=['Chr1','Chr2','Chr3','Chr4','Chr5']
 
 def processInputs( allCPath, sampleNamesAr, numProc, chrmList, fastaIndex, methTypes, outPre, sampleFile, binTest ):
 
 	methTypes.sort()
+	
 	if binTest == False:
 		outFileStr = outPre + '.tsv'
 	else:
@@ -38,8 +39,9 @@ def processInputs( allCPath, sampleNamesAr, numProc, chrmList, fastaIndex, methT
 			totalDict[chrm][i] = sampleDicts[i][chrm]
 	
 	# write output
+	info = '#from_script: chrom_genome_methylation.py; meth_types: {:s}; samples: {:s}; binomial: {:s}'.format( ','.join(methTypes), ','.join(sampleNamesAr), str(binTest) )
 	print( 'Writing output to {:s}...'.format( outFileStr ) )
-	writeOutput( outFileStr, totalDict, sampleNamesAr, methTypes )
+	writeOutput( outFileStr, totalDict, sampleNamesAr, methTypes, info )
 		
 
 def readSampleFile( fileStr ):
@@ -135,11 +137,11 @@ def computeMethylation( methAr, totalAr ):
 		outAr += [ '{:.4f}'.format( weighted ) ]
 	return outAr
 
-def writeOutput( outFileStr, totalDict, sampleNamesAr, methTypes ):
+def writeOutput( outFileStr, totalDict, sampleNamesAr, methTypes, info ):
 	
 	outFile = open( outFileStr, 'w' )
 	# header
-	outStr = 'sample\tchrm\t' + '\t'.join( methTypes ) + '\n'
+	outStr = info + '\nsample\tchrm\t' + '\t'.join( methTypes ) + '\n'
 	outFile.write( outStr )
 	
 	# loop through chromosomes
