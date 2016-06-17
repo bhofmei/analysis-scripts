@@ -21,6 +21,11 @@ def processInputs( allCPath, sampleNamesAr, numProc, chrmList, fastaIndex, methT
 		chrmList = readFastaIndex( fastaIndex )
 	print( '\nMethylation types: {:s}\nChromosomes: {:s}\nUsing binomial test: {:s}\nSamples included: {:s}\nOutput written to: {:s}\n'.format( ' '.join(methTypes), ' '.join(chrmList), str(binTest), ' '.join(sampleNamesAr), outFileStr ) )
 	
+	# check for all allC files before doing any work
+	for sample in sampleNamesAr:
+		if checkFiles( allCPath, sample, chrmList ) == False:
+			exit()
+	
 	print( 'Begin processing with {:d} processors'.format( numProc ) )
 	pool = multiprocessing.Pool( processes=numProc )
 	results = [ pool.apply_async( processSample, args=(sample, allCPath, chrmList, methTypes, binTest) ) for sample in sampleNamesAr ]
@@ -62,6 +67,14 @@ def readFastaIndex( fastaIndexStr ):
 		chrmList += [ lineAr[0] ]
 	fastaIndex.close()
 	return chrmList
+
+def checkFiles( allcPath, sample, chrmList ):
+	
+	for chrm in chrmList:
+		if os.path.isfile( os.path.normpath('{:s}/allc_{:s}_{:s}.tsv'.format( allcPath, sample, chrm ) ) ) == False:
+			print( 'ERROR: allC file for sample {:s} chrm {:s} not found'.format( sample, chrm ) )
+			return False
+	return True
 
 def processSample( sampleName, allCPath, chrmList, methTypes, binTest ):
 	
@@ -218,6 +231,6 @@ def parseInputs( argv ):
 if __name__ == "__main__":
 	if len(sys.argv) < 3 :
 		print ("Usage: python3.4 chrom_genome_methylation.py [-f] [-b] [-p=num_proc] [-o=out_prefix] [-c=chromosomes | -cf=fasta_index] [-m=meth_types] <allC_path> <sample_name> [sample_name]")
-		print("-f\tsamples are listed in file (1 line per sample)\n-c\tcomma-separated list of chromosomes to analyze [default Chr1-5]\nor\n-cf=fasta_index\tuse chromosomes in fasta index file\n-m\tcomma-separated list methylation contexts to analyze [default CG,CHG,CHH,C]\n-p\tnumber of processors to use [default 2]\n-o\tprefix to use for output file[default 'out']\n-b\tcompute weighted methylation for positions passing binomial test only")
+		print("-f\tsamples are listed in file (1 line per sample)\n-c\tcomma-separated list of chromosomes to analyze [default Chr1-5]\nor\n-cf=fasta_index\tuse chromosomes in fasta index file\n-m\tcomma-separated list methylation contexts to analyze [default CG,CHG,CHH,C]\n-p\tnumber of processors to use [default 1]\n-o\tprefix to use for output file[default 'out']\n-b\tcompute weighted methylation for positions passing binomial test only")
 	else:
 		parseInputs( sys.argv[1:] )
