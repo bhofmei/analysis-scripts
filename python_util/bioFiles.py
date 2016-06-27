@@ -471,7 +471,7 @@ class FileAllC_full( FileBio ):
 		reading allC files and storing as a dictionary
 	'''
 	
-	def getAllCDict( self ):
+	def getAllCDict( self, mtypes = None ):
 		# check for pickle file
 		pickleFileStr = self.fbBasename() + '.pick'
 		
@@ -490,7 +490,19 @@ class FileAllC_full( FileBio ):
 		# does not exist -> create
 		else:
 			allcDict = self.__createPickleFile( pickleFileStr )
-		return allcDict
+		if mtypes == None:
+			return allcDict
+		if len(mtypes)==1:
+			return allcDict[mtypes]
+		s = sum([x in mtypes for x in allcDict.keys()])
+		if s > 0:
+			newDict = {}
+			for x in mtypes:
+				newDict[x] = allcDict[x]
+			return newDict
+		else:
+			print( 'warning: allc dict empty; re-specify mtypes' )
+			return False
 	
 	def __createPickleFile( self, pickleFileStr ):
 		# create dictionary
@@ -512,7 +524,7 @@ class FileAllC_full( FileBio ):
 			allCDict[m] = {}
 	
 		for line in allCFile:
-			if line.startswith( 'c' ):
+			if line.startswith( 'chr\t' ):
 				continue
 			lineAr = line.rstrip().split('\t')
 			# (0) chr (1) pos (2) strand (3) mc class (4) mc_count (5) total
