@@ -10,13 +10,9 @@ def processInputs( dmrFileStr, allCPath, lineNamesAr, readCounts, isPickle, outI
 	print( 'Methylation types: {:s}\nSamples included: {:s}\nNumber of DMRs: {:d}\nRead counts: {:s}\nUse pickle: {:s}\n'.format( '  '.join(mTypes), '  '.join(lineNamesAr),dmrCount, str(readCounts), str(isPickle) ) )
 	info = '#from_script: region_methylation_pe.py; meth_types: {:s}; read_counts: {:s}; region_file: {:s}'.format( ','.join(mTypes), str(readCounts), os.path.basename( dmrFileStr ) )
 	
-	if not isPickle:
-		print( 'Non-pickle option not supported yet' )
-		exit()
-	
 	print( 'Begin processing files with {:d} processors'.format( numProc ) )
 	pool = multiprocessing.Pool( processes=numProc )
-	results = [ pool.apply_async( processSample, args=(allCPath, dmrDict, sampleName, mTypes, readCounts) ) for sampleName in lineNamesAr ]
+	results = [ pool.apply_async( processSample, args=(allCPath, dmrDict, sampleName, mTypes, readCounts, isPickle) ) for sampleName in lineNamesAr ]
 	suc = [ p.get() for p in results ]
 	
 	outFileStr = outID + '_region_meth.tsv'
@@ -50,7 +46,7 @@ def readDMRFile( dmrFileStr ):
 	return dmrDict, dmrCount
 
 
-def processSample( allCPath, dmrDict, sampleName, mTypes, readCounts ):
+def processSample( allCPath, dmrDict, sampleName, mTypes, readCounts, pickle ):
 	# get allc dict
 	allcFileAr = [ 'allc_'+sampleName+'.tsv', 'allc_'+sampleName+'.tsv.gz', sampleName+'.tsv', sampleName+'.tsv.gz']
 	allcFileStr = None
@@ -64,7 +60,7 @@ def processSample( allCPath, dmrDict, sampleName, mTypes, readCounts ):
 		return ''
 	# get allc dict
 	allcFile = FileAllC_full( allcFileStr )
-	allcDict = allcFile.getAllCDict()
+	allcDict = allcFile.getAllCDict(isPickle=pickle)
 	
 	# loop through mTypes
 	outStr = ''

@@ -471,7 +471,10 @@ class FileAllC_full( FileBio ):
 		reading allC files and storing as a dictionary
 	'''
 	
-	def getAllCDict( self, mtypes = None ):
+	def getAllCDict( self, mtypes = None, isPickle = True ):
+		#if we don't want to pickle
+		if isPickle == False:
+			allcDict = self.__readAllc()
 		# check for pickle file
 		pickleFileStr = self.fbBasename() + '.pick'
 		
@@ -524,8 +527,6 @@ class FileAllC_full( FileBio ):
 			allCDict[m] = {}
 	
 		for line in allCFile:
-			if line.startswith( 'chr\t' ):
-				continue
 			lineAr = line.rstrip().split('\t')
 			# (0) chr (1) pos (2) strand (3) mc class (4) mc_count (5) total
 			# (6) methylated
