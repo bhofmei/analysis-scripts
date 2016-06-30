@@ -16,7 +16,7 @@ def processInputs( inFileStr, outFileStr, fastaFileStr, sampleName ):
 	i, s, u = readSDI( inFileStr, outFileStr, fastaDict, header )
 	print( 'Ambiguous insertions:', i )
 	print( 'Ambiguous SNPs:', s )
-	print( 'Successful SN:', u )
+	print( 'Successful SNV:', u )
 
 def readSDI( inFileStr, outFileStr, fastaDict, header ):
 	inFile = open( inFileStr, 'r' )
@@ -48,12 +48,12 @@ def readSDI( inFileStr, outFileStr, fastaDict, header ):
 				ambigIns += 1
 				continue
 			refChar = fastaDict[chrm][pos-1]
-			outStr = '{:s}\t{:d}\t.\t{:s}\t{:s}\t.\tPASS\tSV=INS\tGT\t1/1\n'.format( chrm, pos, refChar, refChar+alt )
+			outStr = '{:s}\t{:d}\t.\t{:s}\t{:s}\t.\tPASS\tSNV=INS\tGT\t1/1\n'.format( chrm, pos, refChar, refChar+alt )
 			
 		# deletion
 		elif length < 0:
 			refChar = fastaDict[chrm][pos-2]
-			outStr = '{:s}\t{:d}\t.\t{:s}\t{:s}\t.\tPASS\tSV=DEL\tGT\t1/1\n'.format( chrm, pos-1, refChar+ref, refChar )
+			outStr = '{:s}\t{:d}\t.\t{:s}\t{:s}\t.\tPASS\tSNV=DEL\tGT\t1/1\n'.format( chrm, pos-1, refChar+ref, refChar )
 		else: #SNP
 			if ref not in ['A', 'C', 'G', 'T', 'N' ]:
 				ambigSnp += 1
@@ -61,13 +61,13 @@ def readSDI( inFileStr, outFileStr, fastaDict, header ):
 			tmpIupac = iupac[alt]
 			# homozygous
 			if len( tmpIupac ) == 1:
-				outStr = '{:s}\t{:d}\t.\t{:s}\t{:s}\t.\tPASS\tSV=SNP;DP={:s}\tGT\t1/1\n'.format( chrm, pos, ref, alt, depth )
+				outStr = '{:s}\t{:d}\t.\t{:s}\t{:s}\t.\tPASS\tSNV=SNP;DP={:s}\tGT\t1/1\n'.format( chrm, pos, ref, alt, depth )
 			elif len( tmpIupac ) == 2:
 				if ref not in tmpIupac:
 					continue
 				s = set(tmpIupac)
 				s.remove(ref)
-				outStr = '{:s}\t{:d}\t.\t{:s}\t{:s}\t.\tPASS\tSV=SNP;DP={:s}\tGT\t1/0\n'.format( chrm, pos, ref, list(s)[0], depth )
+				outStr = '{:s}\t{:d}\t.\t{:s}\t{:s}\t.\tPASS\tSNV=SNP;DP={:s}\tGT\t1/0\n'.format( chrm, pos, ref, list(s)[0], depth )
 			else:
 				ambigSnp += 1
 				continue
@@ -82,7 +82,7 @@ def readSDI( inFileStr, outFileStr, fastaDict, header ):
 def outHeader( sampleName ):
 
 	outStr = '##fileformat=VCFv4.1\n'
-	outStr += '##FORMAT=<ID=SV,Number=1,Type=String,Description="SNV Type">\n'
+	outStr += '##INFO=<ID=SNV,Number=1,Type=String,Description="SNV Type">\n'
 	outStr += '##INFO=<ID=DP,Number=1,Type=Integer,Description="Total Depth">\n'
 	outStr += '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">\n'
 	outStr += '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t{:s}\n'.format( sampleName )
