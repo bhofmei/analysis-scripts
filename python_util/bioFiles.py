@@ -94,7 +94,7 @@ class FileGFF( FileBio ):
 		else:
 			return gffAr
 	
-	def getGeneDict( self, chrm=False, rmPeriod=False ):
+	def getGeneDict( self, chrm=False, rmPeriod=False, includeTE=False ):
 		''' return dictionary of genes by gene name
 			value of dictionary is tuple (chrm, start, end, strand )
 		'''
@@ -126,7 +126,7 @@ class FileGFF( FileBio ):
 					chrmFormat = 'asis'
 			
 			# only apply to type = gene
-			if lineAr[2] == "gene":
+			if (includeTE and lineAr[2] in [ 'gene', 'transposable_element_gene', 'pseudogene' ]) or (lineAr[2] == 'gene' ):
 				name = self.getGeneName( lineAr[8], rmPeriod = rP)
 				# put into geneDict
 				gffDict[name] = (chrm, start, end, strand)
@@ -529,6 +529,8 @@ class FileAllC_full( FileBio ):
 			lineAr = line.rstrip().split('\t')
 			# (0) chr (1) pos (2) strand (3) mc class (4) mc_count (5) total
 			# (6) methylated
+			if len( lineAr ) < 7 or lineAr[6].isdigit() == False:
+				continue
 			chrm = lineAr[0]
 			# chrm format
 			if chrmFormat == 'digit' and chrm.isdigit() == False:

@@ -19,7 +19,7 @@ def processInputs( dmrFileStr, allCPath, lineNamesAr, readCounts, isPickle, outI
 	results = [ pool.apply_async( processSample, args=(allCPath, dmrDict, sampleName, mTypes, readCounts) ) for sampleName in lineNamesAr ]
 	suc = [ p.get() for p in results ]
 	
-	outFileStr = outID + 'region_meth.tsv'
+	outFileStr = outID + '_region_meth.tsv'
 	print( 'Writing output to', outFileStr )
 	writeOutput( outFileStr, suc, info, readCounts )
 	
@@ -36,14 +36,16 @@ def readDMRFile( dmrFileStr ):
 	dmrCount = 0
 	
 	for line in dmrFile:
-			lineAr = line.rstrip().split()
-			chrm = lineAr[0]
-			start = int( lineAr[1] )
-			end = int( lineAr[2] )
-			if dmrDict.get(chrm) == None:
-				dmrDict[chrm] = []
-			dmrDict[chrm] += [(start, end)]
-			dmrCount += 1
+		if line.startswith( '#' ):
+			continue
+		lineAr = line.rstrip().split()
+		chrm = lineAr[0]
+		start = int( lineAr[1] )
+		end = int( lineAr[2] )
+		if dmrDict.get(chrm) == None:
+			dmrDict[chrm] = []
+		dmrDict[chrm] += [(start, end)]
+		dmrCount += 1
 	dmrFile.close()
 	return dmrDict, dmrCount
 
@@ -76,7 +78,7 @@ def processSampleMethType( allcDict, dmrDict, readCounts, info ):
 	outStr = ''
 	# loop through chrms
 	for chrm in dmrDict.keys():
-		chrmDict = allcDict[chrm]
+		chrmDict = allcDict.get(chrm)
 		if chrmDict == None:
 			print( 'WARNING: chrm', chrm, 'not found in allC file' )
 			return ''
@@ -112,7 +114,7 @@ def writeOutput( outFileStr, outMat, info, readCounts ):
 	if readCounts:
 		headerAr += ['meth_reads','total_reads']
 	outFile = open( outFileStr, 'w' )
-	outFile.write( info + '\n' + '\t'.join( headerAr ) )
+	outFile.write( info + '\n' + '\t'.join( headerAr ) + '\n' )
 	for text in outMat:
 		outFile.write( text )
 	outFile.close()
@@ -130,14 +132,14 @@ def parseInputs( argv ):
 		if argv[i] == '-r':
 			readCounts = True
 			startInd += 1
-		elif argv[i] == 'k':
+		elif argv[i] == '-k':
 			isPickle = False
 			startInd += 1
 		elif argv[i].startswith('-m'):
 			mTypes = argv[i][3:].upper().split(',')
 			startInd += 1
 		elif argv[i].startswith( '-o=' ):
-			outPre = argv[i][3:]
+			outID = argv[i][3:]
 			startInd += 1
 		elif argv[i].startswith( '-p=' ):
 			try:
