@@ -5,12 +5,12 @@ class FileBio:
 	
 	def __init__( self, inFileStr ):
 		self.fileStr = inFileStr
-		self.isZip = self.__isGZip( inFileStr )
+		self.isZip = self.isGZip( inFileStr )
 	
 	def __str__( self ):
 		return os.path.basename( self.fileStr )
 	
-	def __isGZip( self, fileStr ):
+	def isGZip( self, fileStr ):
 		if fileStr.endswith( '.gz' ) or fileStr.endswith( '.gzip' ):
 			return True
 		return False
@@ -27,6 +27,33 @@ class FileBio:
 		if rInd != -1:
 			return l[:rInd]
 		return l
+
+class FileBioZip( FileBio ):
+	
+	'''def __init__( self, inFileStr ):
+		# look for inFileStr and inFileStr with .gz and .gzip extensions
+		self.fileStr = self.__searchZip( inFileStr )
+		self.isZip = self.__isGZip( self.fileStr )'''
+	
+	def checkZip( self ):
+		fileNew = self.__searchZip( self.fileStr )
+		self.fileStr = fileNew
+		self.isZip = self.isGZip( fileNew )
+	
+	def __searchZip( self, inFileStr ):
+		zipFileStr1 = os.path.normpath( inFileStr + '.gz' )
+		zipFileStr2 = os.path.normpath( inFileStr + '.gzip' )
+		zipFilesStrAr = [ os.path.normpath( inFileStr + x ) for x in ('.gz', '.gzip') ]
+		for zipFileStr in zipFilesStrAr:
+			if os.path.exists( zipFileStr ):
+				if os.path.exists( inFileStr ) == False:
+					return zipFileStr
+				fTime = os.path.getmtime( inFileStr )
+				zTime = os.path.getmtime( zipFileStr )
+				if mTime < zTime:
+					return zipFileStr
+		# end for
+		return inFileStr
 
 ##### GFF
 class FileGFF( FileBio ):
@@ -474,7 +501,9 @@ class FileAllC_full( FileBio ):
 	def getAllCDict( self, mtypes = None, isPickle = True ):
 		#if we don't want to pickle
 		if isPickle == False:
+			print( '~reading {:s}'.format( os.path.basename(self.fileStr) ) )
 			allcDict = self.__readAllc()
+			return allcDict
 		# check for pickle file
 		pickleFileStr = self.fbBasename() + '.pick'
 		
@@ -513,7 +542,7 @@ class FileAllC_full( FileBio ):
 		allcDict = self.__readAllc( )
 		# pickle
 		print( '~creating {:s}'.format(os.path.basename(pickleFileStr)) )
-		pickle.dump( allcDict, open( pickleFileStr, 'wb' ), protocol=4 )
+		pickle.dump( allcDict, open( pickleFileStr, 'wb' ), protocol=3 )
 		return allcDict
 	
 	def __readAllc( self, chrmFormat=None ):
