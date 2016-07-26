@@ -46,12 +46,25 @@ def fileBaseName( fileStr ):
 	if rInd != -1:
 		return bName[:rInd]
 	return bName
-	
+
+''' color conversion functions '''	
 def rgb2hex( r, g, b ):
 	sR = hex(r)[2:]
 	sG = hex(g)[2:]
 	sB = hex(b)[2:]
 	return sR + sG + sB
+
+def rgb2dec( r, g, b ):
+	fR = float( r / 255 )
+	fG = float( g / 255 )
+	fB = float( b / 255 )
+	return ( fR, fG, fB )
+
+def dec2hex( r, g, b ):
+	iR = int( r*255 )
+	iG = int( g*255 )
+	iB = int( b*255 )
+	return rgb2hex( iR, iG, iB )
 
 def hex2rgb( hStr ):
 	hStr = hStr.replace('#', '' )
@@ -65,6 +78,14 @@ def hex2rgb( hStr ):
 	iG = int( hG, base = 16 )
 	iB = int( hB, base = 16 )
 	return ( iR, iG, iB )
+
+def hex2dec( hStr ):
+	r, g, b = hex2rgb( hStr )
+	return rgb2dec( r, g, b )
+
+def hex2dec_str( hStr ):
+	r, g, b = hex2dec( hStr )
+	return '({:.4f}, {:.4f}, {:.4f})'.format( r, g, b )
 	
 def strToDistance( inStr ):
 	
