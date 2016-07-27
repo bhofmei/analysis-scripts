@@ -4,13 +4,26 @@ import sys, os, pickle, math, gzip
 class FileBio:
 	
 	def __init__( self, inFileStr ):
-		self.fileStr = inFileStr
-		self.isZip = self.isGZip( inFileStr )
+		self.fileStr = self.__searchZip( inFileStr )
+		self.isZip = self.__isGZip( self.fileStr )
 	
 	def __str__( self ):
 		return os.path.basename( self.fileStr )
 	
-	def isGZip( self, fileStr ):
+	def __searchZip( self, inFileStr ):
+		zipFilesStrAr = [ os.path.normpath( inFileStr + x ) for x in ('.gz', '.gzip') ]
+		for zipFileStr in zipFilesStrAr:
+			if os.path.exists( zipFileStr ):
+				if os.path.exists( inFileStr ) == False:
+					return zipFileStr
+				fTime = os.path.getmtime( inFileStr )
+				zTime = os.path.getmtime( zipFileStr )
+				if mTime < zTime:
+					return zipFileStr
+		# end for
+		return inFileStr
+	
+	def __isGZip( self, fileStr ):
 		if fileStr.endswith( '.gz' ) or fileStr.endswith( '.gzip' ):
 			return True
 		return False
@@ -27,33 +40,7 @@ class FileBio:
 		if rInd != -1:
 			return l[:rInd]
 		return l
-
-class FileBioZip( FileBio ):
 	
-	'''def __init__( self, inFileStr ):
-		# look for inFileStr and inFileStr with .gz and .gzip extensions
-		self.fileStr = self.__searchZip( inFileStr )
-		self.isZip = self.__isGZip( self.fileStr )'''
-	
-	def checkZip( self ):
-		fileNew = self.__searchZip( self.fileStr )
-		self.fileStr = fileNew
-		self.isZip = self.isGZip( fileNew )
-	
-	def __searchZip( self, inFileStr ):
-		zipFileStr1 = os.path.normpath( inFileStr + '.gz' )
-		zipFileStr2 = os.path.normpath( inFileStr + '.gzip' )
-		zipFilesStrAr = [ os.path.normpath( inFileStr + x ) for x in ('.gz', '.gzip') ]
-		for zipFileStr in zipFilesStrAr:
-			if os.path.exists( zipFileStr ):
-				if os.path.exists( inFileStr ) == False:
-					return zipFileStr
-				fTime = os.path.getmtime( inFileStr )
-				zTime = os.path.getmtime( zipFileStr )
-				if mTime < zTime:
-					return zipFileStr
-		# end for
-		return inFileStr
 
 ##### GFF
 class FileGFF( FileBio ):
@@ -572,13 +559,18 @@ class FileAllC_full( FileBio ):
 			
 			mLineType = self.findMethylType( lineAr[3] )
 			if mLineType in mTypes:
+			pos = int( lineAr[1] )
+			mCount = int( lineAr[4] )
+			tCount = int( lineAr[5] )
+			strand = lineAr[2]
+			isM = int( lineAr[6] )
 				if allCDict[mLineType].get( chrm ) == None:
 					allCDict[mLineType][chrm] = {}
-				allCDict[mLineType][chrm][int(lineAr[1])] = ( int(lineAr[4]), int( lineAr[5]) )
+				allCDict[mLineType][chrm][pos] = ( mCount, tCount, strand, isM )
 				
 			if allCDict['C'].get( chrm ) == None:
 				allCDict['C'][chrm] = {}
-			allCDict['C'][chrm][int(lineAr[1])] = ( int(lineAr[4]), int( lineAr[5]) )
+			allCDict['C'][chrm][pos] = ( mCount, tCount, strand, isM )
 		# end for line
 		allCFile.close()
 		return allCDict
