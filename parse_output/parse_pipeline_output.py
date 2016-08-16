@@ -13,13 +13,13 @@ def processInputs( pathRun, pathCorrection, fastaFileStr, outID, underScores ):
 	totalDict = {}
 	runFiles = glob.glob(uPathRun+'*.py.o*')
 	errorFiles = glob.glob(uPathRun+'*.py.e*')
-	corFiles = glob.glob(uPathCorrection+'*.sh.*')
+	corFiles = glob.glob(uPathCorrection+'*.sh.o*')
 	
 	cov = -1
 	if fastaFileStr != None:
 		print( 'Reading', fastaFileStr )
 		if fastaFileStr.endswith( '.fai' ):
-			cov = readIndex( fastaIndexStr )	
+			cov = readIndex( fastaFileStr )	
 		elif fastaFileStr != None:
 			cov = readFasta( fastaFileStr )
 	print( 'Reading run files for...')
@@ -44,7 +44,7 @@ def processInputs( pathRun, pathCorrection, fastaFileStr, outID, underScores ):
 			totalDict[n] = tmpAr2
 	print( 'Reading correction files for...' )
 	for cor in corFiles:
-		n = getSampleName( cor, underscore )
+		n = getSampleName( cor, underScores+1 )
 		print('-',n )
 		if totalDict.get(n) == None:
 			print( 'ERROR: {:s} has correction file but not run file'.format(n ))
@@ -76,7 +76,7 @@ def readIndex( fastaIndexStr ):
 		lineAr = line.rstrip().split('\t')
 		# (0) name (1) length (2) byte position (3) line length w/o \n
 		# (4) line length w/ \n
-		if lineAr[0] not in ['mitochondria','chloroplast']:
+		if lineAr[0] not in ['mitochondria','chloroplast','ChrC','ChrM','lambda']:
 			baseCount += int( lineAr[1] )
 	indexFile.close()
 	return baseCount
@@ -196,7 +196,7 @@ def readCorrentionOutput( corFileStr ):
 		if state == 0 and lineAr[1] == "non-conversion":
 			nonConversion = float(lineAr[4].replace("%",""))
 			state = 1
-		elif state == 1 and lineAr[0] == "The":
+		elif state == 1 and lineAr[0] == "The" and lineAr[1] == 'closest':
 			bases = lineAr[5]
 			fdr = float( lineAr[-1] )
 			outDict[bases] = fdr
@@ -219,25 +219,24 @@ def writeOutput( totalDict, cov, outFileStr ):
 	#print( sorted(totalDict.keys()) )
 	for sample in sorted(totalDict.keys()):
 		tup = totalDict.get( sample )
-		try:
-			ar = [ '{:d}'.format(x) for x in tup[0][0:4] ]
-			ar += [ '{:.2f}'.format(x) for x in tup[0][4:6] ]
-			ar += [ '{:g}'.format(x) for x in tup[0][6:8]]
-			ar += [ '{:.5f}'.format(x) for x in tup[0][8:] ]
-			if cov != -1:
-				# mappedBases = uniquely mapped reads * floor( processBases / processReads )
-				mappedBases = tup[0][6] * math.floor( float(tup[0][1]) / float(tup[0][0]) )
-				ar += [ '{:.3f}'.format( mappedBases/cov) ]
-			fdrAr = [ tup[1].get(x) for x in nucAr ]
-			fdrAr = [('None' if x == None else '{:.5f}'.format(x)) for x in fdrAr ]
-			
-			outStr = sample+','+','.join(ar) + ',' + ','.join(fdrAr)+'\n'
-		except TypeError:
-			print( sample )
-			print( tup )
-			print( ar )
-			print( fdrAr )
-			exit()
+		#try:
+		ar = [ '{:d}'.format(x) for x in tup[0][0:4] ]
+		ar += [ '{:.2f}'.format(x) for x in tup[0][4:6] ]
+		ar += [ '{:g}'.format(x) for x in tup[0][6:8]]
+		ar += [ '{:.5f}'.format(x) for x in tup[0][8:] ]
+		if cov != -1:
+			# mappedBases = uniquely mapped reads * floor( processBases / processReads )
+			mappedBases = tup[0][6] * math.floor( float(tup[0][1]) / float(tup[0][0]) )
+			ar += [ '{:.3f}'.format( mappedBases/cov) ]
+		fdrAr = [ tup[1].get(x) for x in nucAr ]
+		fdrAr = [('None' if x == None else '{:.5f}'.format(x)) for x in fdrAr ]
+		
+		outStr = sample+','+','.join(ar) + ',' + ','.join(fdrAr)+'\n'
+		#except TypeError:
+		#	print( sample )
+			#print( tup )
+			#print( ar )
+			#print( fdrAr )
 		outFile.write( outStr )
 	outFile.close()
 

@@ -3,13 +3,17 @@ import sys, math, glob, multiprocessing, subprocess, os, bisect, random
 # Usage: python3 parse_rna_output_type3.py [-u=num_underscores_keep] [-o=out_id] [-t=output_type] <path_to_output> 
 
 # use for different rna-seq output types
-# 1 - trimmomatic, bowtie2
-# 2 - trimmomatic, tophat
-# 3 - trimmomatic, bowtie2, cufflinks
-# 4 - trimmomatic, tophat, cufflinks [default]
+# 1 - trimmomatic, bowtie2 SE (tbs)
+# 2 - trimmomatic, tophat SE (tts)
+## 3 - trimmomatic, bowtie2 PE (tbp)
+## 4 - trimmomatic, tophat PE (ttp)
+# 5 - trimmomatic, bowtie2, cufflinks SE (tbcs)
+# 6 - trimmomatic, tophat, cufflinks SE [default] (ttcs)
+## 7 - trimmomatic, bowtie2, cufflinks PE (tbcp)
+# 8 - trimmomatic, tophat, cufflinks PE (tbcp)
 
 UNDERSCORE=1
-OUTTYPE=4
+OUTTYPE=6
 
 def processInputs( dirPath, outID, outType, underScore ):
 	totalDict = {}
@@ -53,17 +57,28 @@ def getSampleName( fileStr, underScore ):
 	return baseName[:fInd]
 
 def readFile( fileStr, outType ):
-	if outType == 1:
-		return readFile1( fileStr )
-	elif outType == 2:
-		return readFile2( fileStr )
-	elif outType == 3:
-		return readFile3( fileStr )
-	elif outType == 4:
-		return readFile4( fileStr )
+	if outType == 1: # TBS
+		return readFile_tbp( fileStr )
+	elif outType == 2: #TTS
+		return readFile_tts( fileStr )
+	elif outType == 3: # TBP - bad
+		print( 'ERROR: output type 3 not currently supported' )
+		exit()
+	elif outType == 4: # TTP - bad
+		print( 'ERROR: output type 4 not currently supported' )
+		exit()
+	elif outType == 5: # TBCS
+		return readFile_tbcs( fileStr )
+	elif outType == 6: #TTCS
+		return readFile_ttcs( fileStr )
+	elif outType == 7: # TBCP - bad
+		print( 'ERROR: output type 7 not currently supported' )
+		exit()
+	elif outType == 8: # TTCP 
+		return readFile_ttcp( fileStr )
 
-def readFile1( fileStr ):
-	'''	TRIMMOMATIC, BOWTIE2
+def readFile_tbs( fileStr ):
+	'''	TRIMMOMATIC, BOWTIE2 SE
 	'''
 	# (0) input reads (1) surviving reads (2) dropped reads 
 	# (3) aligned 0 times (4) aligned 1 time (5) aligned >1 time 
@@ -109,8 +124,8 @@ def readFile1( fileStr ):
 	inFile.close()
 	return outAr
 	
-def readFile2( fileStr ):
-	''' TRIMMOMATIC, TOPHAT
+def readFile_tts( fileStr ):
+	''' TRIMMOMATIC, TOPHAT SE
 	'''
 	# (0) input reads (1) surviving reads (2) dropped reads
 	# (3) aligned 0 times (4) aligned 1 time (5) aligned >1 time 
@@ -161,8 +176,8 @@ def readFile2( fileStr ):
 	inFile.close()
 	return outAr
 
-def readFile3( fileStr ):
-	''' TRIMMOMATIC, BOWTIE2, CUFFLINKS
+def readFile_tbcs( fileStr ):
+	''' TRIMMOMATIC, BOWTIE2, CUFFLINKS SE
 	'''
 	# (0) input reads (1) surviving reads (2) dropped reads 
 	# (3) aligned 0 times (4) aligned 1 time (5) aligned >1 time 
@@ -212,8 +227,8 @@ def readFile3( fileStr ):
 	inFile.close()
 	return outAr
 
-def readFile4( fileStr ):
-	''' TRIMMOMATIC, TOPHAT, CUFFLINKS
+def readFile_ttcs( fileStr ):
+	''' TRIMMOMATIC, TOPHAT, CUFFLINKS SE
 	'''
 	inFile = open( fileStr, 'r' )
 	# (0) input reads (1) surviving reads (2) dropped reads
@@ -269,33 +284,138 @@ def readFile4( fileStr ):
 	outAr[10] = float(outAr[7]) / outAr[0] * 100 # percent remaining = total mapped (7) / input (0)
 	inFile.close()
 	return outAr
+	
+def readFile_ttcp( fileStr ):
+	''' TRIMMOMATIC, TOPHAT, CUFFLINKS PE
+	'''
+	inFile = open( fileStr, 'r' )
+	# (0) input reads (1) surviving reads (2) dropped reads 
+	# (3) pairs surviving (4) forward-only surviving (5) reverse-only surviving
+	# (6) left overall mapped (7) left aligned 0 times 
+	# (8) left aligned >20 times (9) right overall mapped
+	# (10) right aligned 0 times (11) right aligned >20 times 
+	# (12) overall mapped (13) overall mapping rate 
+	# (14) aligned pairs (15) multiple alignment pairs (16) discordant pairs
+	# (17) concordant pair rate (18) processed loci
+	
+	
+	outAr = [-1]*19
+	tpInput = [0,0]
+	state = 0
+	
+	for line in inFile:
+		line = line.rstrip().lstrip()
+		lineAr = line.split()
+		if len( lineAr ) < 2:
+			continue
+		if state == 0 and lineAr[0] == "Input":
+		# Input Read Pairs: 40014844 Both Surviving: 39993127 (99.95%) Forward Only Surviving: 10936 (0.03%) Reverse Only Surviving: 1238 (0.00%) Dropped: 9543 (0.02%)
+			outAr[0] = int( lineAr[3] ) # input reads 
+			outAr[3] = int( lineAr[6] ) # pairs surviving reads
+			outAr[4] = int( lineAr[11] ) # forward surviving reads
+			outAr[5] = int( lineAr[16] ) # reverse surviving reads
+			outAr[2] = int( lineAr[19] ) # discarded reads
+			state = 1
+		# error state for trimmomatic
+		elif state == 0 and lineAr[0] == 'Exception':
+			state = 1
+		elif state == 1 and lineAr[1] == "Processed":
+			state = 2
+		elif state == 1 and lineAr[0] == "Processed" and lineAr[2] == "loci.":
+			outAr[18] = int( lineAr[1] )
+			state = 3
+		elif state == 2 and lineAr[1] == "Processed":
+			outAr[18] = int( lineAr[2] )
+			state = 3
+		elif state == 3 and lineAr[0] == 'Left':
+			state = 4
+		elif state == 3 and lineAr[0] == 'Right':
+			state = 5
+		elif (state == 4 or state == 5 ) and lineAr[0] == "Input":
+			#Input     :  42125263
+			q = state - 4
+			tpInput[q] = int( lineAr[2] )
+		elif (state == 4 or state == 5 ) and lineAr[0] == 'Mapped':
+			# Mapped   :  38836800 (92.2% of input)
+			# (6) left (9)
+			q = (6 if state == 4 else 9 )
+			outAr[q] = int( lineAr[2] )
+		elif (state == 4 or state == 5 ):
+			#  of these:  11019027 (28.9%) have multiple alignments (2571446 have >20)
+			# (8) left (11) right
+			q = (8 if state == 4 else 11 )
+			try:
+				outAr[q] =  int( lineAr[7].replace("(","") )
+			except ValueError:
+				outAr[q] =  int( lineAr[8].replace("(","") )
+			state = 3
+		elif state == 3 and lineAr[1] == 'overall':
+			# 94.1% overall read mapping rate.
+			outAr[13] = float( lineAr[0].replace('%','' ) )
+			state = 6
+		elif state == 6 and lineAr[0] == 'Aligned':
+			# Aligned pairs:  36072458
+			outAr[14] = int( lineAr[2] )
+		elif state == 6 and lineAr[0] == 'of':
+			# of these:  10583302 (29.3%) have multiple alignments
+			outAr[15] = int( lineAr[2] )
+			state = 7
+		elif state == 7:
+			# 2285255 ( 6.3%) are discordant alignments
+			outAr[16] = int( lineAr[0] )
+			state = 8
+		elif state == 8 and lineAr[1] == 'concordant':
+			# 84.5% concordant pair alignment rate.
+			outAr[17] =  float( lineAr[0].replace('%','' ) )
+			break
+	# end for line
+	outAr[1] = outAr[3] + outAr[4] + outAr[5] # surviving(1) = pairs(3) + forward($) + reverse(5) surviving
+	outAr[7] = 	tpInput[0] - outAr[6] # left.aligned0 (7) = left.input - left.mapped(6)
+	outAr[10] = tpInput[1] - outAr[9] # right.aligned0 (10) = right.input - right.mapped(9)
+	outAr[12] = int(outAr[13] / 100 * ( tpInput[0] + tpInput[1] )) # overall mapped = mapping rate * (left.input + right.input)
+	
+	inFile.close()
+	return outAr
 
 def writeOutput( outFileStr, totalDict, outType ):
 	btAr = ['sample_name', 'input_reads', 'surviving_reads', 'dropped_reads', 'aligned_0_times', 'aligned_1_time', 'aligned_>1_time', 'overall_mapped', 'overall_mapping_rate', 'multimapping_rate' ]
 	tpAr = ['sample_name', 'input_reads', 'surviving_reads', 'dropped_reads', 'aligned_0_times', 'aligned_1_time', 'aligned_>1_time', 'aligned_>20_times', 'overall_mapped', 'overall_mapping_rate', 'multimapping_rate', 'percent_remaining' ]
+	tpPeAr = ['sample_name','input_reads', 'surviving_reads', 'dropped_reads', 'pairs_surviving', 'forwand-only_surviving', 'reverse-only_surviving', 'left_overall_mapped', 'left_aligned_0_times', 'left_aligned_>20_times', 'right_overall_mapped', 'right_aligned_0_times', 'right_aligned_>20_times', 'overall_mapped', 'overall_mapping_rate', 'aligned_pairs', 'multiple_aligned_pairs', 'discordant_pairs', 'concordant_pair_rate' ]
 	cfAr = [ 'processed_loci' ]
-	if outType % 2 == 0:
-		headerAr = tpAr
-	else:
+	# mod 2 means tophat, mod 4 == 0 or 1 means PE
+	isBowtie = outType % 2
+	isPE = outType % 4 # is PE if < 2
+	if isBowtie:
 		headerAr = btAr
-	if outType > 2:
+	elif isPE < 2:	# ttp, ttcp
+		headerAr = tpPeAr
+	else: # tts, ttcs
+		headerAr = tpAr
+		
+	# outtype > 5 means cufflinks
+	if outType > 5:
 		headerAr += cfAr
 	
 	outFile = open( outFileStr, 'w' )
 	outFile.write( '{:s}\n'.format( ','.join( headerAr ) ) )
-	# loop through samples
+	
 	ip = (8 if (outType % 2 == 0) else 7 )
+	pefl = [ 13, 17 ]
 	for sample in sorted( totalDict.keys() ):
 		ar = totalDict[ sample ]
+		#print( ar )
 		outAr = [ sample ]
-		
-		outAr += [ '{:d}'.format( ar[i] ) for i in range( ip ) ]	# integers
-		outAr += [ '{:.2f}'.format( ar[i] ) for i in range( ip, ip+2 ) ]
-		if outType % 2 == 0:
-			outAr += [ '{:.2f}'.format( ar[ip+2] ) ]
-		if outType > 2:
-			outAr += [ '{:d}'.format( ar[ip+3] ) ]
+		if isPE > 1: # single end data
+			outAr += [ '{:d}'.format( ar[i] ) for i in range( ip ) ]	# integers
+			outAr += [ '{:.2f}'.format( ar[i] ) for i in range( ip, ip+2 ) ]
+			if outType % 2 == 0:
+				outAr += [ '{:.2f}'.format( ar[ip+2] ) ]
+			if outType > 2:
+				outAr += [ '{:d}'.format( ar[ip+3] ) ]
+		else: # paired end
+			outAr += [ ('{:.2f}'.format( ar[i] ) if i in pefl else '{:d}'.format( ar[i] ) ) for i in range(len(ar)) ]
 		outFile.write( '{:s}\n'.format( ','.join( outAr ) ) )
+	# end for sample	
 	outFile.close()
 
 def parseInputs( argv ):
@@ -318,7 +438,7 @@ def parseInputs( argv ):
 		elif argv[i].startswith( '-t=' ):
 			try:
 				outType = int( argv[i][3:] )
-				if outType < 1 or outType > 4:
+				if outType < 1 or outType > 8:
 					print( 'ERROR: not valid output type' )
 					exit()
 				startInd += 1
@@ -348,10 +468,12 @@ def printHelp():
 	print( "-u=num_underscores\tnumber of underscores in sample name to keep;\n\t\t0 keeps all [default: 1]" )
 	print( "-o=out_id\tidentifier used for output file [default: 'out']" )
 	print( "-t=output_type\toutput type based on software steps used" )
-	print( "\t\t1 - trimmomatic, bowtie2" )
-	print( "\t\t2 - trimmomatic, tophat" )
-	print( "\t\t3 - trimmomatic, bowtie2, cufflinks" )
-	print( "\t\t4 - trimmomatic, tophat, cufflinks [default]" )
+	print( "\t\t1 - trimmomatic, bowtie2 SE" )
+	print( "\t\t2 - trimmomatic, tophat SE" )
+	print( "\t\t5 - trimmomatic, bowtie2, cufflinks SE" )
+	print( "\t\t6 - trimmomatic, tophat, cufflinks SE [default]" )
+	print( "\t\t7 - trimmomatic, tophat PE" )
+	print( "\t\t8 - trimmomatic, tophat, cufflinks PE [default]" )
 	print( "-h\tprint this help screen" )
 
 if __name__ == "__main__":
