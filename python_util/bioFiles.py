@@ -490,25 +490,25 @@ class FileAllC_full( FileBio ):
 		if isPickle == False:
 			print( '~reading {:s}'.format( os.path.basename(self.fileStr) ) )
 			allcDict = self.__readAllc()
-			return allcDict
 		# check for pickle file
-		pickleFileStr = self.fbBasename() + '.pick'
-		
-		fileExists = os.path.isfile( pickleFileStr )
-		# if exists -> check modification time
-		if fileExists:
-			mTime = os.path.getmtime( self.fileStr )
-			tTime = os.path.getmtime( pickleFileStr )
-			fSize = os.path.getsize( pickleFileStr )
-			if tTime < mTime or fSize < 100:
-				print( '~updating {:s}'.format(os.path.basename(pickleFileStr)) )
-				allcDict = self.__createPickleFile( pickleFileStr )
-			else:
-				print( '~loading {:s}'.format(os.path.basename(pickleFileStr)) )
-				allcDict = pickle.load( open(pickleFileStr, 'rb') )
-		# does not exist -> create
 		else:
-			allcDict = self.__createPickleFile( pickleFileStr )
+			pickleFileStr = self.fbBasename() + '.pick'
+		
+			fileExists = os.path.isfile( pickleFileStr )
+			# if exists -> check modification time
+			if fileExists:
+				mTime = os.path.getmtime( self.fileStr )
+				tTime = os.path.getmtime( pickleFileStr )
+				fSize = os.path.getsize( pickleFileStr )
+				if tTime < mTime or fSize < 100:
+					print( '~updating {:s}'.format(os.path.basename(pickleFileStr)) )
+					allcDict = self.__createPickleFile( pickleFileStr )
+				else:
+					print( '~loading {:s}'.format(os.path.basename(pickleFileStr)) )
+					allcDict = pickle.load( open(pickleFileStr, 'rb') )
+			# does not exist -> create
+			else:
+				allcDict = self.__createPickleFile( pickleFileStr )
 		if mtypes == None:
 			return allcDict
 		if len(mtypes)==1:
@@ -559,11 +559,11 @@ class FileAllC_full( FileBio ):
 			
 			mLineType = self.findMethylType( lineAr[3] )
 			if mLineType in mTypes:
-			pos = int( lineAr[1] )
-			mCount = int( lineAr[4] )
-			tCount = int( lineAr[5] )
-			strand = lineAr[2]
-			isM = int( lineAr[6] )
+				pos = int( lineAr[1] )
+				mCount = int( lineAr[4] )
+				tCount = int( lineAr[5] )
+				strand = lineAr[2]
+				isM = int( lineAr[6] )
 				if allCDict[mLineType].get( chrm ) == None:
 					allCDict[mLineType][chrm] = {}
 				allCDict[mLineType][chrm][pos] = ( mCount, tCount, strand, isM )
