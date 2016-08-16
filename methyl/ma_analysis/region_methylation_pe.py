@@ -100,7 +100,7 @@ def calculateRegionC( start, end, allcDict, readCounts ):
 			tC += tup[1]
 	# end for pos
 	wMeth = (0.0 if tC == 0 else float(mC) / float(tC))
-	outStr = '{:d}\t{:d}\t{:.4f}'.format( start, end, wMeth )
+	outStr = '{:d}\t{:d}\t{:.6f}'.format( start, end, wMeth )
 	if readCounts:
 		outStr += '\t{:d}\t{:d}'.format( mC, tC )
 	return outStr
