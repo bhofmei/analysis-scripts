@@ -1,24 +1,26 @@
 import sys, math, glob, multiprocessing, subprocess, os, bisect, random
 
-# Usage: python filter_pos_gbm_cds.p <pos_file> <gbm_file> <gff_file>
+# Usage: python filter_pos_gbm.p [-cds] [-v] <pos_file> <gbm_file> <gff_file>
 
-def processInputs(posFileStr, gbmFileStr, gffFileStr):
-	info = '#from_script: filter_pos_gbm_cds.py; pos_file: {:s}; gbm_file: {:s}; gff_file: {:s}'.format( os.path.basename( posFileStr ), os.path.basename( gbmFileStr ), os.path.basename( gffFileStr ) )
+def processInputs(posFileStr, gbmFileStr, gffFileStr, isCDS, isOppo):
+	info = '#from_script: filter_pos_gbm.py; pos_file: {:s}; gbm_file: {:s}; gff_file: {:s}; use_cds: {:s}; is_opposite: {:s}'.format( os.path.basename( posFileStr ), os.path.basename( gbmFileStr ), os.path.basename( gffFileStr ), str(isCDS), str(isOppo) )
 	print( 'Position file:', os.path.basename( posFileStr ))
 	print( 'gBM file:', os.path.basename( gbmFileStr ))
 	print( 'GFF file:', os.path.basename( gffFileStr ) )
+	print( 'Using gBM features: {:s}'.format(( 'CDS' if isCDS else 'gene' )) )
+	print( 'Getting opposite coordinates:', isOppo )
 	base = os.path.basename( posFileStr )
 	rInd = base.rfind( '.' )
-	outFileStr = base[:rInd] + '_gbm' + base[rInd:]
+	outFileStr = base[:rInd] + '_' + ('ngbm' if isOppo else 'gbm') + '_' + ('cds' if isCDS else 'gene') + base[rInd:]
 	print( ' Reading gBM list' )
 	gbmAr = readGBM( gbmFileStr )
 	#print( gbmAr )
-	print( ' Getting gBM CDS coordinates' )
-	gbmDict = readGFF( gffFileStr, gbmAr )
+	print( ' Getting {:s} {:s} coordinates'.format(('ngBM' if isOppo else 'gBM'), ('CDS' if isCDS else 'gene')  ) )
+	gbmDict = readGFF( gffFileStr, gbmAr, isCDS )
 	print( ' Filtering position file' )
-	countB, countA = writeOutput( posFileStr, outFileStr, gbmDict, info )
+	countB, countA = writeOutput( posFileStr, outFileStr, gbmDict, info, isOppo )
 	print( ' Original position count:', countB )
-	print( ' gBM position count:', countA )
+	print( ' output position count:', countA )
 	print( ' Output written to', outFileStr )
 
 def readGBM( gbmFileStr ):
@@ -43,7 +45,7 @@ def bisectIndex( a, x ):
 	else:
 		return None
 
-def readGFF( gffFileStr, gbmAr ):
+def readGFF( gffFileStr, gbmAr, isCDS ):
 	
 	gffFile = open( gffFileStr, 'r' )
 	gffDict = {}
@@ -60,18 +62,35 @@ def readGFF( gffFileStr, gbmAr ):
 		strand = lineAr[6]
 		if gffDict.get( chrm ) == None:
 			gffDict[chrm] = []
-		
-		if lineAr[2] == "CDS":
+			
+		if lineAr[2] == "CDS" and isCDS:
 			name = getGeneNameCDS( lineAr[8] )
 			#print( '-', name )
 			if name in gbmAr:
 				for i in range(start, end+1 ):
 					bisect.insort( gffDict[chrm], i )
 		# end if CDS
+		elif lineAr[2] == 'mRNA':
+			name = getGeneName( lineAr[8] )
+			#print( '-', name )
+			if name in gbmAr:
+				for i in range(start, end+1 ):
+					bisect.insort( gffDict[chrm], i )
+		# end elif mRNA
 	# end for line
 	
 	gffFile.close()
 	return gffDict
+
+def getGeneName (notesStr):
+	search = "Name="
+	index = notesStr.find(search)
+	adIndex = index + len(search)
+	endIndex = notesStr[adIndex:].find(';')
+	if endIndex == -1:
+		return notesStr[adIndex:]
+	else:
+		return  notesStr[adIndex:endIndex+adIndex]
 
 def getGeneNameCDS (notesStr):
 	search = "Parent="
@@ -83,7 +102,7 @@ def getGeneNameCDS (notesStr):
 	else:
 		return  notesStr[adIndex:endIndex+adIndex]
 	
-def writeOutput( posFileStr, outFileStr, gbmDict, info ):
+def writeOutput( posFileStr, outFileStr, gbmDict, info, isOppo ):
 	countB = 0
 	countA = 0
 	inFile = open( posFileStr, 'r' )
@@ -100,7 +119,7 @@ def writeOutput( posFileStr, outFileStr, gbmDict, info ):
 		if posAr == None:
 			continue
 		isIn = bisectIndex( posAr, pos )
-		if isIn != None:
+		if (isIn != None and not isOppo) or (isIn == None and isOppo):
 			countA += 1
 			outFile.write( line )
 	# end for line
@@ -109,14 +128,31 @@ def writeOutput( posFileStr, outFileStr, gbmDict, info ):
 	return countB, countA	
 
 def parseInputs( argv ):
-	posFileStr = argv[0]
-	gbmFileStr = argv[1]
-	gffFileStr = argv[2]
-	processInputs(posFileStr, gbmFileStr, gffFileStr)
+
+	isCDS = False
+	isOppo = False
+	startInd = 0
+	
+	for i in range(min(2,len(argv)-3)):
+		if argv[i].lower() == '-cds':
+			isCDS = True
+			startInd += 1
+		elif argv[i] == '-v':
+			isOppo = True
+			startInd += 1
+		elif argv[i].startswith( '-' ):
+			print( '{:s} is not a valid parameter'.format( argv[i] ) )
+			exit()
+	# end for i
+	
+	posFileStr = argv[startInd]
+	gbmFileStr = argv[startInd+1]
+	gffFileStr = argv[startInd+2]
+	processInputs(posFileStr, gbmFileStr, gffFileStr, isCDS, isOppo)
 
 
 if __name__ == "__main__":
 	if len(sys.argv) < 4:
-		print ("Usage: python filter_pos_gbm_cds.p <pos_file> <gbm_file> <gff_file>")
+		print ("Usage: python filter_pos_gbm.py [-cds] [-v] <pos_file> <gbm_file> <gff_file>")
 	else:
 		parseInputs( sys.argv[1:] )

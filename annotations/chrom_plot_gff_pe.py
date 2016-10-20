@@ -1,7 +1,7 @@
 import sys, math, glob, multiprocessing, subprocess, os, bisect, random
 import bth_util
 
-# Usage: chrom_plot_gff_pe.py [-o=out_id] [-p=num_proc] [-b=num_bins | -s=bin_size] [-c=chrm_list] [-l=labels] [-t=calc_type] <fasta_index> <gff_file> [gff_file]*
+# Usage: chrom_plot_gff_pe.py [-o=out_id] [-p=num_proc] [-b=num_bins | -s=bin_size]] [-c=chrm_list] [-l=labels] [-t=calc_type] <fasta_index> <gff_file> [gff_file]*
 
 NUMPROC=1
 NUMBINS=100
@@ -32,6 +32,9 @@ def processInputs(gffFileStrAr, fastaIndexStr, labels, calcType, outID, chrmList
 	gffDictAr = [ p.get() for p in results ]
 	
 	info = "#from_script:chrom_plot_gff_pe.py; "
+	# gffAr
+	gffTmpAr = [ os.path.basename(x) for x in gffFileStrAr ]
+	info += 'gff_files:' + ','.join(gffTmpAr ) + ';'
 	if binSize == -1:
 		info += "num_bins:{:d}".format( aNumBins )
 	else:
@@ -114,7 +117,7 @@ def processGFFFile( gffFileStr, chrmDict, binSize, numBins, calcType ):
 		end = int(lineAr[4])
 		success = chrmDict.get( chrm )
 		featType = lineAr[2]
-		if success == None or featType not in ["gene", "similarity"]:
+		if success == None or featType not in ["gene", "similarity", "transposable_element"]:
 			continue
 		if binSize == -1:
 			bStart = int( start // chrmDict[chrm] )
@@ -185,6 +188,7 @@ def parseInputs( argv ):
 	numProc = NUMPROC
 	numBins = -1
 	binSize = -1
+	overlapSize = 0
 	labels = None
 	calcType = 'n'
 	outID = ''
@@ -216,18 +220,13 @@ def parseInputs( argv ):
 			if numBins != -1:
 				print( 'ERROR: cannot specify -b and -s together' )
 				exit()
-			try:
-				binStr = argv[i][3:]
-				if binStr.endswith( 'k' ) or binStr.endswith( 'K' ):
-					binSize = int( binStr[:-1] ) * 1000
-				elif binStr.endswith( 'm' ) or binStr.endswith( 'M' ):
-					binSize = int( binStr[:-1] ) * 1000000
-				else:
-					binSize = int( binStr )
-				startInd += 1
-			except ValueError:
-				print( 'ERROR: bin size must be an integer' )
+			
+			binStr = argv[i][3:]
+			binSize = bth_util.strToDistance( binStr )
+			if binSize == False:
+				print( 'ERROR: cannot interpret bin size' )
 				exit()
+			startInd += 1
 		elif argv[i].startswith( '-o=' ):
 			outID = argv[i][3:]
 			startInd += 1

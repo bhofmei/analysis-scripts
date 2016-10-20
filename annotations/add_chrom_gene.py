@@ -64,7 +64,7 @@ def processFile( fileStr, colNum, gffDict ):
 		delim = ','
 	rInd = fileStr.rfind( '.' )
 	outFileStr = fileStr[:rInd] + '_chrm' + fileStr[rInd:]
-	
+	Sherrie Hines
 	readFile( fileStr, outFileStr, colNum, delim, gffDict )
 	
 def readFile( inFileStr, outFileStr, colNum, delim, gffDict ):
