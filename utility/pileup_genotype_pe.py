@@ -1,19 +1,20 @@
-import sys, math, glob, multiprocessing, subprocess, os, bisect, random
+import sys, multiprocessing, subprocess, os
 
-# Usage: python pileup_genotype_pe.py [-o=out_id] [-p=num_proc] [-m=mother_label] [-f=father_label] [-v=min_cov] <decoded_pileup_file> 
-## Assumes all pileup files have information for the same positions
+# Usage: python pileup_genotype_pe.py [-h] [-q] [-o=out_id] [-p=num_proc] [-m=mother_label] [-f=father_label] [-v=min_cov] <decoded_pileup_file> 
 
 NUMPROC=1
 NUCAR = ['A', 'C', 'G', 'T', 'a', 'c', 'g', 't' ]
+MINCOV = 1
 
-def processInputs( pileFileStr, outID, numProc, parentLabelAr, minCov ):
+def processInputs( pileFileStr, outID, numProc, parentLabelAr, minCov, isPrint ):
 	
-	info = '#from_script: pileup_genotype_pe.py; mother_label: {:s}; father_label: {:s}; min_cov: {:d}; input_files: {:s}'.format( parentLabelAr[0], parentLabelAr[1], minCov, os.path.basename(pileFileStr) )
+	info = '#from_script: pileup_genotype_pe.py; mother_label: {:s}; father_label: {:s}; min_cov_samples: {:d}; input_files: {:s}'.format( parentLabelAr[0], parentLabelAr[1], minCov, os.path.basename(pileFileStr) )
 	
-	print( 'Mother label:', parentLabelAr[0] )
-	print( 'Father label:', parentLabelAr[1] )
-	print( 'Min coverage:', minCov )
-	print( 'Input file:', os.path.basename(pileFileStr) )
+	if isPrint:
+		print( 'Mother label:', parentLabelAr[0] )
+		print( 'Father label:', parentLabelAr[1] )
+		print( 'Min coverage:', minCov )
+		print( 'Input file:', os.path.basename(pileFileStr) )
 	
 	# parse input file
 	posList, sampleNamesAr, valueMat = parseInputFile( pileFileStr )
@@ -25,8 +26,8 @@ def processInputs( pileFileStr, outID, numProc, parentLabelAr, minCov ):
 	parentInd = [ sampleNamesAr.index(x) for x in parentLabelAr ]
 	
 	# analyze valueMat with processors -> each row
-	
-	print( 'Begin processing files with {:d} processors'.format( numProc ) )
+	if isPrint:
+		print( 'Begin processing files with {:d} processors'.format( numProc ) )
 	pool = multiprocessing.Pool( processes=numProc )
 	results = [ pool.apply_async( processRow, args=(valueMat[i], parentInd, minCov) ) for i in range(len(valueMat)) ]
 	outMat = [ p.get() for p in results ]
@@ -39,9 +40,11 @@ def processInputs( pileFileStr, outID, numProc, parentLabelAr, minCov ):
 		else:
 			outID = bName
 	outFileStr = '{:s}_genotyped.tsv'.format( outID )
-	print( 'Writing output to', outFileStr)
+	if isPrint:
+		print( 'Writing output to', outFileStr)
 	writeOutput( outFileStr, posList, outMat, sampleNamesAr, info )
-	print( 'Done' )
+	if isPrint:
+		print( 'Done' )
 	
 def parseInputFile( pileFileStr ):
 	posList = []
@@ -78,14 +81,14 @@ def processRow( inAr, parInd, minCov ):
 	# if no differences, return
 	if sum(pDiff) == 0:
 		return None
+	elif sum(pDiff) == 1:
+		return None
 	# otherwise iterate through all samples and assign genotype
 	mAr = bitWise( mVal, pDiff, 'and' )
 	fAr = bitWise( fVal, pDiff, 'and' )
 	
 	for i in range(n):
 		decoded = assignGenotype( inAr[i], minCov, mAr, fAr )
-		if decoded == None:
-			return None
 		outAr[i] = ( inAr[i], decoded )
 	# end for i
 	return outAr
@@ -110,7 +113,7 @@ def decode( inStr, minCov ):
 		fInd = anyBase.index( x[0] )
 		c = int( x[x.find("(")+1:x.find(")")] )
 		#print( fInd, c )
-		outAr[fInd] = ( 1 if int(c) > minCov else 0 )
+		outAr[fInd] = ( 1 if int(c) >= minCov else 0 )
 	# end for
 	return outAr
 
@@ -124,13 +127,13 @@ def assignGenotype( sampleStr, minCov, mAr, fAr ):
 	isF = sum(bitWise(sampleAr, fAr, 'and')) > 0
 	
 	if isM and isF:
-		return 'MPV'
+		return 'heterozygous'
 	elif isM:
 		return 'mother'
 	elif isF:
 		return 'father'
 	else:
-		return None
+		return 'NA'
 
 def writeOutput( outFileStr, posList, outMat, sampleNamesAr, info  ):
 	outFile = open( outFileStr, 'w' )
@@ -141,11 +144,12 @@ def writeOutput( outFileStr, posList, outMat, sampleNamesAr, info  ):
 		# get outMat values
 		valAr = outMat[i]
 		if valAr == None:
-			continue	# skip position as it isn't useful
+			outFile.write('\t'.join(posList[i]) + '\tno-difference-between-parents\n')	# skip position as it isn't useful
 		# loop through samples
-		for j in range(len(sampleNamesAr)):
-			outStr = '\t'.join( posList[i] ) + '\t' + sampleNamesAr[j] + '\t' + '\t'.join( valAr[j] ) + '\n'
-			outFile.write( outStr )
+		else:
+			for j in range(len(sampleNamesAr)):
+				outStr = '\t'.join( posList[i] ) + '\t' + sampleNamesAr[j] + '\t' + '\t'.join( valAr[j] ) + '\n'
+				outFile.write( outStr )
 		# end for j
 	# end for i
 		
@@ -156,11 +160,15 @@ def parseInputs( argv ):
 	numProc = NUMPROC
 	parentLabelAr = ['mother', 'father']
 	startInd = 0
-	minCov = 0
+	minCov = MINCOV
+	isPrint = True
 	
-	for i in range(min(5,len(argv)-1)):
+	for i in range(min(7,len(argv)-1)):
 		if argv[i].startswith( '-o=' ):
 			outID = argv[i][3:]
+			startInd += 1
+		elif argv[i] == '-q':
+			isPrint = False
 			startInd += 1
 		elif argv[i].startswith( '-m=' ):
 			parentLabelAr[0] = argv[i][3:]
@@ -171,27 +179,44 @@ def parseInputs( argv ):
 		elif argv[i].startswith( '-p=' ):
 			try:
 				numProc = int( argv[i][3:] )
-				startInd += 1
 			except ValueError:
-				print( 'WARNING: number of processors must be integer...using 1' )
+				print( 'WARNING: number of processors must be integer...using', NUMPROC )
 				numProc = NUMPROC
+			startInd += 1
 		elif argv[i].startswith( '-v=' ):
 			try:
 				minCov = int( argv[i][3:] )
-				startInd += 1
 			except ValueError:
-				print( 'WARNING: min coverage must be integer...using 0' )
-				minCov = 0
+				print( 'WARNING: min coverage must be integer...using', MINCOV )
+				minCov = MINCOV
+			startInd += 1
+		elif argv[i] in [ '-h', '--help', '-help']:
+			printHelp()
+			exit()
 		elif argv[i].startswith( '-' ):
 			print( 'ERROR: {:s} is not a valid option'.format( argv[i] ) )
 			exit()
 	# end for
 	pileupFileStr = argv[startInd]
-	processInputs( pileupFileStr, outID, numProc, parentLabelAr, minCov )
+	processInputs( pileupFileStr, outID, numProc, parentLabelAr, minCov, isPrint )
 
-
+def printHelp():
+	print ("Usage:\tpython pileup_genotype_pe.py [-h] [-q] [-o=out_id] [-p=num_proc]\n\t[-m=mother_label] [-f=father_label] [-v-min_cov] <decoded_pileup_file> ")
+	print()
+	print('Required:' )
+	print('decode_pileup_file\ttab-delimited input file; output of decode_pileup_pe.py' )
+	print()
+	print('Optional:' )
+	print( '-h\t\tprint help and exit' )
+	print( '-q\t\tquiet; do not print progress' )
+	print('-o=out_id\tidentifier for output file [default variation of input file\n\t\tname]' )
+	print('-v=min_cov\tmin number of reads needed to support genotype [default {:d}]'.format( MINCOV) )
+	print('-p=num_pro\tnumber of processors [default {:d}]'.format( NUMPROC) )
+	print('-m=mother_label\tsample name of mother [default mother]' )
+	print('-f=father_label\tsample name of father [default father]' )
+	
 if __name__ == "__main__":
 	if len(sys.argv) < 2 :
-		print ("Usage: python pileup_genotype_pe.py [-o=out_id] [-p=num_proc] [-m=mother_label] [-f=father_label] <decoded_pileup_file> ")
+		printHelp()
 	else:
 		parseInputs( sys.argv[1:] )

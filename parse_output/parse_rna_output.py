@@ -65,8 +65,7 @@ def readFile( fileStr, outType ):
 		print( 'ERROR: output type 3 not currently supported' )
 		exit()
 	elif outType == 4: # TTP - bad
-		print( 'ERROR: output type 4 not currently supported' )
-		exit()
+		return readFile_ttp( fileStr )
 	elif outType == 5: # TBCS
 		return readFile_tbcs( fileStr )
 	elif outType == 6: #TTCS
@@ -173,6 +172,90 @@ def readFile_tts( fileStr ):
 	outAr[8] = float(outAr[7]) / tpInput * 100 # overall mapping = total mapped (7) / input
 	outAr[9] = float(outAr[5]) / outAr[7] * 100 # multimapping = >1 (5) / total mapped (7)
 	outAr[10] = float(outAr[7]) / outAr[0] * 100 # remaining = total mapped (7) / input (0)
+	inFile.close()
+	return outAr
+
+def readFile_ttp( fileStr ):
+	''' TRIMMOMATIC, TOPHAT PE
+	'''
+	inFile = open( fileStr, 'r' )
+	# (0) input reads (1) surviving reads (2) dropped reads 
+	# (3) pairs surviving (4) forward-only surviving (5) reverse-only surviving
+	# (6) left overall mapped (7) left aligned 0 times 
+	# (8) left aligned >20 times (9) right overall mapped
+	# (10) right aligned 0 times (11) right aligned >20 times 
+	# (12) overall mapped (13) overall mapping rate 
+	# (14) aligned pairs (15) multiple alignment pairs (16) discordant pairs
+	# (17) concordant pair rate
+	
+	
+	outAr = [-1]*18
+	tpInput = [0,0]
+	state = 0
+	
+	for line in inFile:
+		line = line.rstrip().lstrip()
+		lineAr = line.split()
+		if len( lineAr ) < 2:
+			continue
+		if state == 0 and lineAr[0] == "Input":
+		# Input Read Pairs: 40014844 Both Surviving: 39993127 (99.95%) Forward Only Surviving: 10936 (0.03%) Reverse Only Surviving: 1238 (0.00%) Dropped: 9543 (0.02%)
+			outAr[0] = int( lineAr[3] ) # input reads 
+			outAr[3] = int( lineAr[6] ) # pairs surviving reads
+			outAr[4] = int( lineAr[11] ) # forward surviving reads
+			outAr[5] = int( lineAr[16] ) # reverse surviving reads
+			outAr[2] = int( lineAr[19] ) # discarded reads
+			state = 3
+		# error state for trimmomatic
+		elif state == 0 and lineAr[0] == 'Exception':
+			state = 3
+		elif state == 3 and lineAr[0] == 'Left':
+			state = 4
+		elif state == 3 and lineAr[0] == 'Right':
+			state = 5
+		elif (state == 4 or state == 5 ) and lineAr[0] == "Input":
+			#Input     :  42125263
+			q = state - 4
+			tpInput[q] = int( lineAr[2] )
+		elif (state == 4 or state == 5 ) and lineAr[0] == 'Mapped':
+			# Mapped   :  38836800 (92.2% of input)
+			# (6) left (9)
+			q = (6 if state == 4 else 9 )
+			outAr[q] = int( lineAr[2] )
+		elif (state == 4 or state == 5 ):
+			#  of these:  11019027 (28.9%) have multiple alignments (2571446 have >20)
+			# (8) left (11) right
+			q = (8 if state == 4 else 11 )
+			try:
+				outAr[q] =  int( lineAr[7].replace("(","") )
+			except ValueError:
+				outAr[q] =  int( lineAr[8].replace("(","") )
+			state = 3
+		elif state == 3 and lineAr[1] == 'overall':
+			# 94.1% overall read mapping rate.
+			outAr[13] = float( lineAr[0].replace('%','' ) )
+			state = 6
+		elif state == 6 and lineAr[0] == 'Aligned':
+			# Aligned pairs:  36072458
+			outAr[14] = int( lineAr[2] )
+		elif state == 6 and lineAr[0] == 'of':
+			# of these:  10583302 (29.3%) have multiple alignments
+			outAr[15] = int( lineAr[2] )
+			state = 7
+		elif state == 7:
+			# 2285255 ( 6.3%) are discordant alignments
+			outAr[16] = int( lineAr[0] )
+			state = 8
+		elif state == 8 and lineAr[1] == 'concordant':
+			# 84.5% concordant pair alignment rate.
+			outAr[17] =  float( lineAr[0].replace('%','' ) )
+			break
+	# end for line
+	outAr[1] = outAr[3] + outAr[4] + outAr[5] # surviving(1) = pairs(3) + forward($) + reverse(5) surviving
+	outAr[7] = 	tpInput[0] - outAr[6] # left.aligned0 (7) = left.input - left.mapped(6)
+	outAr[10] = tpInput[1] - outAr[9] # right.aligned0 (10) = right.input - right.mapped(9)
+	outAr[12] = int(outAr[13] / 100 * ( tpInput[0] + tpInput[1] )) # overall mapped = mapping rate * (left.input + right.input)
+	
 	inFile.close()
 	return outAr
 
@@ -470,10 +553,10 @@ def printHelp():
 	print( "-t=output_type\toutput type based on software steps used" )
 	print( "\t\t1 - trimmomatic, bowtie2 SE" )
 	print( "\t\t2 - trimmomatic, tophat SE" )
+	print( "\t\t4 - trimmomatic, tophat PE" )
 	print( "\t\t5 - trimmomatic, bowtie2, cufflinks SE" )
 	print( "\t\t6 - trimmomatic, tophat, cufflinks SE [default]" )
-	print( "\t\t7 - trimmomatic, tophat PE" )
-	print( "\t\t8 - trimmomatic, tophat, cufflinks PE [default]" )
+	print( "\t\t8 - trimmomatic, tophat, cufflinks PE" )
 	print( "-h\tprint this help screen" )
 
 if __name__ == "__main__":

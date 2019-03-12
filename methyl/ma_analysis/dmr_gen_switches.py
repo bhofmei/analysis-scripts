@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 import scipy.stats as stats
 from functools import partial
-import pandas_util
 
 NUMC=10
 METH=0.3
@@ -39,7 +38,7 @@ def processInputs(inFileStr, outID, numC, mThresh, fdrThresh, lenThresh, isRawWM
 	dfFC['pvalue'] = dfFC.apply( computePropTest, axis=1 )
 	
 	print( 'Applying correction for {:d} tests'.format( dfFC.shape[0] ) )
-	dfFC['pvalue.adjust'] = pandas_util.pvalueAdjust( dfFC['pvalue'] )
+	dfFC['pvalue.adjust'] = pvalueAdjust( dfFC['pvalue'] )
 	dfFC['pvalue.log'] = -1 * np.log10( dfFC['pvalue.adjust'] )
 	
 	print( 'Analyzing for switches' )
@@ -103,6 +102,31 @@ def computePropTest( data ):
 	#chi2, p, dof, ex = stats.chi2_contingency( np.array([mC,uC]), correction=True)
 	odr, p = stats.fisher_exact( np.array([mC,uC]) )
 	return p
+
+def pvalueAdjust( pvalues ):
+	''' expects a list/series/array of p-values
+		returns list of adjust pvalues
+	'''
+	n = len(pvalues)
+	values = [ (p,i) for i,p in enumerate(pvalues) ]
+	values.sort()
+	values.reverse()
+	newValues = []
+	outValues = np.zeros(n)
+	for i, vals in enumerate(values):
+		rank = n - i
+		pval,index = vals
+		newValues.append( (n/rank)*pval )
+	# end for i
+	for i in range(n-1):
+		if newValues[i] < newValues[i+1]:
+			newValues[i+1] = newValues[i]
+	# end for i
+	for i, vals in enumerate(values):
+		pval,index = vals
+		outValues[index] = newValues[i]
+	# end for i
+	return outValues
 
 def mThreshold( data, wm=0.3, ir=False ):
 	n = len(data)

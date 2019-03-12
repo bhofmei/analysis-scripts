@@ -3,9 +3,10 @@ import sys, os, pickle, math, gzip
 
 class FileBio:
 	
-	def __init__( self, inFileStr ):
+	def __init__( self, inFileStr, isPrint = True ):
 		self.fileStr = self.__searchZip( inFileStr )
 		self.isZip = self.__isGZip( self.fileStr )
+		self.isPrint = isPrint
 	
 	def __str__( self ):
 		return os.path.basename( self.fileStr )
@@ -18,7 +19,7 @@ class FileBio:
 					return zipFileStr
 				fTime = os.path.getmtime( inFileStr )
 				zTime = os.path.getmtime( zipFileStr )
-				if mTime < zTime:
+				if fTime < zTime:
 					return zipFileStr
 		# end for
 		return inFileStr
@@ -35,6 +36,14 @@ class FileBio:
 			return open( self.fileStr, 'r' )
 	
 	def fbBasename( self ):
+		l1 = os.path.basename( self.fileStr )
+		l = l1.replace('.gz', '' ).replace( '.gzip', '' )
+		rInd = l.rfind( '.' )
+		if rInd != -1:
+			return l[:rInd]
+		return l
+	
+	def fbBasePathName( self ):
 		l = self.fileStr.replace('.gz', '' ).replace( '.gzip', '' )
 		rInd = l.rfind( '.' )
 		if rInd != -1:
@@ -488,11 +497,12 @@ class FileAllC_full( FileBio ):
 	def getAllCDict( self, mtypes = None, isPickle = True ):
 		#if we don't want to pickle
 		if isPickle == False:
-			print( '~reading {:s}'.format( os.path.basename(self.fileStr) ) )
+			if self.isPrint:
+				print( '~reading {:s}'.format( os.path.basename(self.fileStr) ) )
 			allcDict = self.__readAllc()
 		# check for pickle file
 		else:
-			pickleFileStr = self.fbBasename() + '.pick'
+			pickleFileStr = self.fbBasePathName() + '.pick'
 		
 			fileExists = os.path.isfile( pickleFileStr )
 			# if exists -> check modification time
@@ -501,10 +511,12 @@ class FileAllC_full( FileBio ):
 				tTime = os.path.getmtime( pickleFileStr )
 				fSize = os.path.getsize( pickleFileStr )
 				if tTime < mTime or fSize < 100:
-					print( '~updating {:s}'.format(os.path.basename(pickleFileStr)) )
+					if self.isPrint:
+						print( '~updating {:s}'.format(os.path.basename(pickleFileStr)) )
 					allcDict = self.__createPickleFile( pickleFileStr )
 				else:
-					print( '~loading {:s}'.format(os.path.basename(pickleFileStr)) )
+					if self.isPrint:
+						print( '~loading {:s}'.format(os.path.basename(pickleFileStr)) )
 					allcDict = pickle.load( open(pickleFileStr, 'rb') )
 			# does not exist -> create
 			else:
@@ -512,7 +524,7 @@ class FileAllC_full( FileBio ):
 		if mtypes == None:
 			return allcDict
 		if len(mtypes)==1:
-			return allcDict[mtypes]
+			return allcDict[mtypes[0]]
 		s = sum([x in mtypes for x in allcDict.keys()])
 		if s > 0:
 			newDict = {}
@@ -525,10 +537,12 @@ class FileAllC_full( FileBio ):
 	
 	def __createPickleFile( self, pickleFileStr ):
 		# create dictionary
-		print( '~reading {:s}'.format( os.path.basename(self.fileStr) ) )
+		if self.isPrint:
+			print( '~reading {:s}'.format( os.path.basename(self.fileStr) ) )
 		allcDict = self.__readAllc( )
 		# pickle
-		print( '~creating {:s}'.format(os.path.basename(pickleFileStr)) )
+		if self.isPrint:
+			print( '~creating {:s}'.format(os.path.basename(pickleFileStr)) )
 		pickle.dump( allcDict, open( pickleFileStr, 'wb' ), protocol=3 )
 		return allcDict
 	
@@ -584,6 +598,88 @@ class FileAllC_full( FileBio ):
 			return 'CNN'
 		else:
 			return 'CHH'
+
+class FileAllC_chrm( FileAllC_full ):
+
+	def fileExists( self ):
+		return os.path.exists(self.fileStr)
+		
+	def getAllCDict( self, mtypes = None, isPickle = True, countsOnly = False ):
+		#if we don't want to pickle
+		if isPickle == False:
+			if self.isPrint:
+				print( '~reading {:s}'.format( os.path.basename(self.fileStr) ) )
+			allcDict = self.__readAllc(counts=countsOnly)
+		# check for pickle file
+		else:
+			pickleFileStr = self.fbBasePathName() + '.pick'
+		
+			fileExists = os.path.isfile( pickleFileStr )
+			# if exists -> check modification time
+			if fileExists:
+				mTime = os.path.getmtime( self.fileStr )
+				tTime = os.path.getmtime( pickleFileStr )
+				fSize = os.path.getsize( pickleFileStr )
+				if tTime < mTime or fSize < 100:
+					if self.isPrint:
+						print( '~updating {:s}'.format(os.path.basename(pickleFileStr)) )
+					allcDict = self.__createPickleFile( pickleFileStr )
+				else:
+					if self.isPrint:
+						print( '~loading {:s}'.format(os.path.basename(pickleFileStr)) )
+					allcDict = pickle.load( open(pickleFileStr, 'rb') )
+			# does not exist -> create
+			else:
+				allcDict = self.__createPickleFile( pickleFileStr )
+		if mtypes == None:
+			return allcDict
+		if len(mtypes)==1:
+			return allcDict[mtypes[0]]
+		s = sum([x in mtypes for x in allcDict.keys()])
+		if s > 0:
+			newDict = {}
+			for x in mtypes:
+				newDict[x] = allcDict[x]
+			return newDict
+		else:
+			print( 'warning: allc dict empty; re-specify mtypes' )
+			return False
+
+	def __readAllc( self, counts = False ):
+		mTypes = [ 'CG', 'CHG', 'CHH', 'C' ]
+		
+		allCFile = self.fbOpen()
+		allCDict = {}
+	
+		for m in mTypes:
+			allCDict[m] = {}
+	
+		for line in allCFile:
+			lineAr = line.rstrip().split('\t')
+			# (0) chr (1) pos (2) strand (3) mc class (4) mc_count (5) total
+			# (6) methylated
+			if len( lineAr ) < 7 or lineAr[6].isdigit() == False:
+				continue
+			chrm = lineAr[0]
+
+			mLineType = self.findMethylType( lineAr[3] )
+			pos = int( lineAr[1] )
+			mCount = int( lineAr[4] )
+			tCount = int( lineAr[5] )
+			strand = lineAr[2]
+			isM = int( lineAr[6] )
+			if mLineType in mTypes:
+				if counts:
+					allCDict[mLineType][pos] = ( mCount, tCount )
+				else:
+					allCDict[mLineType][pos] = ( mCount, tCount, strand, isM )
+			if counts:
+				allCDict['C'][pos] = ( mCount, tCount )
+			else:	
+				allCDict['C'][pos] = ( mCount, tCount, strand, isM )
+		# end for line
+		allCFile.close()
+		return allCDict
 
 class FileFASTAIndex( FileBio ):
 	'''
@@ -653,7 +749,10 @@ class FileFASTA( FileBio ):
 		fastaDict = self.readFasta( )
 		# pickle
 		print( '~creating {:s}'.format(os.path.basename(pickleFileStr)) )
-		pickle.dump( fastaDict, open( pickleFileStr, 'wb' ), protocol=3 )
+		#pickle.dump( fastaDict, open( pickleFileStr, 'wb' ), protocol=3 )
+		tmp = open( pickleFileStr, 'wb' )
+		pickle.dump( fastaDict,  tmp)
+		tmp.close()
 		return fastaDict
 	
 	def readFasta( self ):

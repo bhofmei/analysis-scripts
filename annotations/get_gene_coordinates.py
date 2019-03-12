@@ -1,9 +1,9 @@
 import sys, os
 from bioFiles import *
 
-# Usage: python3 get_gene_coordinates.py [-a] [-c=col_num] [-o=out_id] <in_file> <gff_file>
+# Usage: python3 get_gene_coordinates.py [-a | -b] [-c=col_num] [-o=out_id] <in_file> <gff_file>
 
-def processInputs( inFileStr, gffFileStr, colNum, outID, isAppend ):
+def processInputs( inFileStr, gffFileStr, colNum, outID, isAppend, isBed ):
 	print( 'Input file:', os.path.basename( inFileStr ) )
 	print( 'GFF file:', os.path.basename( gffFileStr ) )
 	print( 'Reading gff file' )
@@ -16,17 +16,21 @@ def processInputs( inFileStr, gffFileStr, colNum, outID, isAppend ):
 		b = os.path.basename( inFileStr )
 		rInd = b.rfind( '.' )
 		outFileStr = b[:rInd] + '_coord.tsv'
+	
+	if isBed:
+		outFileStr = outFileStr.replace('_coord.tsv', '.bed')
+		
 	print( 'Writing output to', outFileStr )
 	# read input file and write output
-	readFile( inFileStr, outFileStr, gffDict, colNum, isAppend )
+	readFile( inFileStr, outFileStr, gffDict, colNum, isAppend, isBed )
 
-def readFile( inFileStr, outFileStr, gffDict, colNum, isAppend ):
+def readFile( inFileStr, outFileStr, gffDict, colNum, isAppend, isBed ):
 
 	isCSV = ( inFileStr.endswith( '.csv' ) )
 	inFile = open( inFileStr, 'r' )
 	outFile = open( outFileStr, 'w' )
 	# header for not append
-	if not isAppend:
+	if not (isAppend or isBed):
 		outFile.write( '#chrm\tstart\tend\tname\n' )
 	
 	for line in inFile:
@@ -39,7 +43,9 @@ def readFile( inFileStr, outFileStr, gffDict, colNum, isAppend ):
 				outFile.write( '{:s}\tgChrm\tgStart\tgEnd\n'.format( '\t'.join( lineAr ) ) )
 			continue
 		# get gene name
-		gName = formatGeneName( lineAr[colNum] )
+		#gName = formatGeneName( lineAr[colNum] )
+		gName = lineAr[colNum]
+		gName = gName.replace('"','')
 		gCoord = gffDict.get( gName )
 		if gCoord == None:
 			print( gName, 'not found in GFF' )
@@ -50,6 +56,9 @@ def readFile( inFileStr, outFileStr, gffDict, colNum, isAppend ):
 			gChrm, gStart, gEnd, gStrand = gCoord
 			if isAppend:
 				outFile.write( '{:s}\t{:s}\t{:d}\t{:d}\n'.format( '\t'.join( lineAr ), gChrm, gStart, gEnd ) )
+			elif isBed:
+				# (0) scaffold (1) start (2) end (3) name (4) score (5) strand
+				outFile.write( '{:s}\t{:d}\t{:d}\t{:s}\t{:d}\t{:s}\n'.format( gChrm, gStart-1, gEnd, gName, gEnd-gStart+1, gStrand ) )
 			else:
 				outFile.write( '{:s}\t{:d}\t{:d}\t{:s}\n'.format( gChrm, gStart, gEnd, gName ) )
 	# end for line
@@ -67,11 +76,15 @@ def parseInputs( argv ):
 	colNum = 0
 	outID = None
 	isAppend = False
+	isBed = False
 	startInd = 0
 	
-	for i in range(min(3,len(argv)-2)):
+	for i in range(min(4,len(argv)-2)):
 		if argv[i] == '-a':
 			isAppend = True
+			startInd += 1
+		elif argv[i] == '-b':
+			isBed = True
 			startInd += 1
 		elif argv[i].startswith( '-o=' ):
 			outID = argv[i][3:]
@@ -92,7 +105,7 @@ def parseInputs( argv ):
 	# end for
 	inFileStr = argv[startInd]
 	gffFileStr = argv[startInd+1]
-	processInputs( inFileStr, gffFileStr, colNum, outID, isAppend )
+	processInputs( inFileStr, gffFileStr, colNum, outID, isAppend, isBed )
 
 def printHelp():
 	print ("Usage: python3 get_gene_coordinates.py [-a] [-c=col_num] [-o=out_id] <in_file> <gff_file>")

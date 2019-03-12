@@ -1,35 +1,42 @@
 import sys, multiprocessing, subprocess, os, gzip
 
-# Usage: combine_allc_pe.py [-f] [-p=num_proc] [-o=out_id] [-c=chrm_list | -cf=fasta_index] <allc_path> <sample_name> [sample_name]*
+# Usage: combine_allc_pe.py [-f][-q][-h][-z] [-p=num_proc] [-c=chrm_list | -cf=fasta_index] [-o=out_id] <allc_path> <sample_name> [sample_name]*
 # combine many allc files at basepair level into one allc file
 
 NUMPROC=1
 CHRMLIST=['Chr1','Chr2','Chr3','Chr4','Chr5']
 
-def processInputs( allCPath, sampleNamesAr, numProc, chrmList, fastaIndex, outID, sampleFile ):
+def processInputs( allCPath, sampleNamesAr, numProc, chrmList, fastaIndex, outID, sampleFile, isCompress, isPrint ):
+
 	
 	if outID == None:
 		outID = 'combined'
 	
 	if sampleFile:
-		print( 'Reading file of samples names...' )
+		if isPrint:
+			print( 'Reading file of samples names...' )
 		sampleNamesAr = readSampleFile( sampleNamesAr[0] )
 	if fastaIndex != None:
 		chrmList = readFastaIndex( fastaIndex )
 	
-	print( '\nChromosomes: {:s}\nSamples included: {:s}\n'.format( ' '.join(chrmList), ' '.join(sampleNamesAr) ) )
+	info = '#from_script: combine_allc_pe.py; samples: {:s}'.format( ','.join(sampleNamesAr) )
+
+	#if isPrint:
+		#print( '\nChromosomes: {:s}\nSamples included: {:s}\n'.format( ' '.join(chrmList), ' '.join(sampleNamesAr) ) )
 	
 	# check for all allC files before doing any work
-	for sample in sampleNamesAr:
-		if checkFiles( allCPath, sample, chrmList ) == False:
-			exit()
+	#for sample in sampleNamesAr:
+	#	if checkFiles( allCPath, sample, chrmList ) == False:
+	#		exit()
 	
 	#  loop through chromosomes
-	print( 'Begin processing with {:d} processors'.format( numProc ) )
+	if isPrint:
+		print( 'Begin processing with {:d} processors'.format( numProc ) )
 	pool = multiprocessing.Pool( processes=numProc )
-	results = [ pool.apply_async( processChrm, args=(sampleNamesAr, allCPath, chrm, outID) ) for chrm in chrmList ]
+	results = [ pool.apply_async( processChrm, args=(sampleNamesAr, allCPath, chrm, outID, info, isCompress, isPrint) ) for chrm in chrmList ]
 	suc = [ p.get() for p in results ]
-	print( 'Done' )
+	if isPrint:
+		print( 'Done' )
 
 def readSampleFile( fileStr ):
 	
@@ -56,37 +63,45 @@ def readFastaIndex( fastaIndexStr ):
 	fastaIndex.close()
 	return chrmList
 
-def checkFiles( allcPath, sample, chrmList ):
-	
-	for chrm in chrmList:
-		if os.path.isfile( os.path.normpath('{:s}/allc_{:s}_{:s}.tsv'.format( allcPath, sample, chrm ) ) ) == False and os.path.isfile( os.path.normpath('{:s}/allc_{:s}_{:s}.tsv.gz'.format( allcPath, sample, chrm ) ) ) == False:
-			print( 'ERROR: allC file for sample {:s} chrm {:s} not found'.format( sample, chrm ) )
-			return False
-	return True
+def checkFile( allcPath, sample, chrm ):
+	testPath = os.path.normpath('{:s}/allc_{:s}_{:s}.tsv'.format( allcPath, sample, chrm ) )
+	if os.path.isfile( testPath ):
+		return testPath 
+	elif os.path.isfile( testPath + '.gz' ):
+		return testPath + '.gz'
+	return False
 
-def processChrm( sampleNamesAr, allcPath, chrm, outID ):
+def processChrm( sampleNamesAr, allcPath, chrm, outID, info, isCompress, isPrint ):
 	# initialize dictionary
 	methDict = {}
 	
 	# loop through samples
 	for sample in sampleNamesAr:
-		allCFileStr = os.path.normpath('{:s}/allc_{:s}_{:s}.tsv'.format( allcPath, sample, chrm ) )
-		print( 'Reading {:s}'.format( allCFileStr ) )
-		methDict = readAllC( allCFileStr, methDict )
+		allcFileStr = checkFile( allcPath, sample, chrm )
+		if allcFileStr != False:
+			if isPrint:
+				print( 'Reading {:s}'.format( allcFileStr ) )
+			methDict = readAllC( allcFileStr, methDict )
 	
 	# write output
-	outFileStr = os.path.normpath('{:s}/allc_{:s}_{:s}.tsv'.format( allcPath, outID, chrm ) )
-	print( 'Writing', outFileStr )
-	writeOutput( outFileStr, methDict, chrm )
+	if len(methDict.keys()) > 0:
+		outFileStr = os.path.normpath('{:s}/allc_{:s}_{:s}.tsv{:s}'.format( allcPath, outID, chrm, ('.gz' if isCompress else '') ) )
+		if isPrint:
+			print( 'Writing', outFileStr )
+		writeOutput( outFileStr, methDict, chrm, info, isCompress )
 	
 	# delete dict
 	del( methDict )
 	return True
 	
-def readAllC( allCFileStr, inDict ):
-	allCFile = openFile( allCFileStr )
-	# headers
-	for line in allCFile:
+def readAllC( allcFileStr, inDict ):
+	#allCFile = openFile( allCFileStr )
+	if allcFileStr.endswith('.gz'):
+		allcFile = gzip.open( allcFileStr, 'rt' )
+	else:
+		allcFile = open( allcFileStr, 'r' )
+	
+	for line in allcFile:
 		lineAr = line.rstrip().split('\t')
 		# (0) chr (1) pos (2) strand (3) mc class (4) mc_count (5) total
 		# (6) methylated
@@ -115,20 +130,18 @@ def readAllC( allCFileStr, inDict ):
 			inDict[pos][3] += int( lineAr[5] )
 		# end else
 	# end for
-	allCFile.close()
+	allcFile.close()
 	return inDict
 
-def openFile( allcFileStr ):
-	if os.path.isfile( allcFileStr ) == False and os.path.isfile( allcFileStr + '.gz' ):
-		return gzip.open( allcFileStr+'.gz', 'rt' )
-	else:
-		return open( allcFileStr, 'r' )
-			
-def writeOutput( outFileStr, methDict, chrm ):
+def writeOutput( outFileStr, methDict, chrm, info, isCompress ):
 	# (0) chr (1) pos (2) strand (3) mc class (4) mc_count (5) total
 	# (6) methylated
 	
-	outFile = open( outFileStr, 'w' )
+	if isCompress:
+		outFile = gzip.open( outFileStr, 'wt' )
+	else:
+		outFile = open( outFileStr, 'w' )
+	outFile.write( info + '\n' )
 	
 	# loop through positions
 	for pos in sorted( methDict.keys() ):
@@ -143,11 +156,19 @@ def parseInputs( argv ):
 	sampleFile = False
 	chrmList = None
 	fastaIndex = None
+	isPrint = True
+	isCompress = False
 	startInd = 0
 	
-	for i in range(min(5,len(argv)-2)):
+	for i in range(min(7,len(argv)-2)):
 		if argv[i].startswith( '-o=' ):
 			outID = argv[i][3:]
+			startInd += 1
+		elif argv[i] == '-q':
+			isPrint = False
+			startInd += 1
+		elif argv[i] == '-z':
+			isCompress = True
 			startInd += 1
 		elif argv[i] == '-f':
 			sampleFile = True
@@ -167,10 +188,11 @@ def parseInputs( argv ):
 		elif argv[i].startswith( '-p=' ):
 			try:
 				numProc = int( argv[i][3:] )
-				startInd += 1
+
 			except ValueError:
-				print( 'ERROR: number of processors must be integer' )
-				exit()
+				print( 'WARNING: number of processors must be integer...using default', NUMPROC )
+				numProc = NUMPROC
+			startInd += 1
 		elif argv[i] in [ '-h', '--help', '-help']:
 			printHelp()
 			exit()
@@ -193,13 +215,25 @@ def parseInputs( argv ):
 			print( 'ERROR: only specify one file with sample names' )
 			exit()
 	
-	processInputs( allCPath, sampleNamesAr, numProc, chrmList, fastaIndex, outID, sampleFile )
+	processInputs( allCPath, sampleNamesAr, numProc, chrmList, fastaIndex, outID, sampleFile, isCompress, isPrint )
 
 def printHelp():
 	
-	print( 'Usage: combine_allc_pe.py [-f] [-p=num_proc] [-o=out_id] [-c=chrm_list | -cf=fasta_index] <allc_path> <sample_name> [sample_name]*' )
-	print( 'Combines allc files from multiple samples into a single allc file' )
-	print( 'Any or all input allc files may be compressed with gzip (file name ends in .gz' )
+	print( 'Usage:\tpython combine_allc_pe.py [-q] [-h] [-f] [-z] [-p=num_proc] [-o=out_id]\n\t[-c=chrm_list | -cf=fasta_index] <allc_path> <sample_name> [sample_name]*' )
+	print()
+	print( 'Required:' )
+	print( 'allc_path\tpath to allC files' )
+	print( 'sample_name\tname of sample; used to find allC files\n\t\twhen "-f" flag set, file with sample names listed one per line' )
+	print()
+	print( 'Optional:' )
+	print( '-q\t\tquiet; do not print progress' )
+	print( '-h\t\tprint help message and exit' )
+	print( '-f\t\tsample names are in file' )
+	print( '-z\t\tcompress output with gzip' )
+	print( '-p=num_proc\tnumber of processors to use [default {:d}]'.format( NUMPROC) )
+	print( '-o=out_id\toutput file identifier [default "combined"]' )
+	print( '-c=chrm_list\tcomma-separated list of chrms to use [default for arabidopsis]' )
+	print( '-cf=fasta_index\tfasta index file with chrms to use' )
 	
 	
 

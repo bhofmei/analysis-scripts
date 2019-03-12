@@ -1,6 +1,6 @@
 import sys, math, glob, multiprocessing, subprocess, os
 
-# Usage: concat_allc_pe.py [-cg] [-p=num_proc] [-c=chrm_list] <out_prefix> <allc_path> <sample1> <sample2> [sampleN]*
+# Usage: table_allc_pe.py [-cg] [-p=num_proc] [-c=chrm_list] <out_prefix> <allc_path> <sample1> <sample2> [sampleN]*
 # creates table of samples and methylation per positions
 
 NUMPROC=1
@@ -98,6 +98,6 @@ def parseInputs( argv ):
 
 if __name__ == "__main__":
 	if len(sys.argv) < 5 :
-		print ("Usage: concat_allc_pe.py [-cg] [-p=num_proc] <out_prefix> <allc_path> <sample1> <sample2> [sampleN]*")
+		print ("Usage: table_allc_pe.py [-cg] [-p=num_proc] <out_prefix> <allc_path> <sample1> <sample2> [sampleN]*")
 	else:
 		parseInputs( sys.argv[1:] )

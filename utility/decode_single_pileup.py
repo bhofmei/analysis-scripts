@@ -7,8 +7,8 @@ def processInputs( pileFileStr, outID ):
 	outStr = parsePileup( pileFileStr )
 	info = '#from_script: decode_single_pileup.py; pileup_file: ' + os.path.basename( pileFileStr )
 	outFileStr = '{:s}_decoded_pileup.tsv'.format( outID )
-	print( 'Writing output to', outFileStr, info )
-	writeOutput( outFileStr, outStr )
+	print( 'Writing output to', outFileStr )
+	writeOutput( outFileStr, outStr, info )
 	print( 'Done' )
 
 def parsePileup( inFileStr ):

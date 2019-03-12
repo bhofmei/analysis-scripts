@@ -93,22 +93,24 @@ def calculateRegionC( start, end, allcDict, readCounts ):
 	
 	mC = 0
 	tC = 0
+	nC = 0
 	for pos in range(start, end+1):
 		tup = allcDict.get(pos)
 		if tup != None:
 			mC += tup[0]
 			tC += tup[1]
+			nC += 1
 	# end for pos
 	wMeth = (0.0 if tC == 0 else float(mC) / float(tC))
 	outStr = '{:d}\t{:d}\t{:.6f}'.format( start, end, wMeth )
 	if readCounts:
-		outStr += '\t{:d}\t{:d}'.format( mC, tC )
+		outStr += '\t{:d}\t{:d}\t{:d}'.format( mC, tC, nC )
 	return outStr
 
 def writeOutput( outFileStr, outMat, info, readCounts ):
 	headerAr = [ 'meth_type', 'sample', 'chrm', 'start', 'end', 'wei_meth' ]
 	if readCounts:
-		headerAr += ['meth_reads','total_reads']
+		headerAr += ['meth_reads','total_reads','num_c']
 	outFile = open( outFileStr, 'w' )
 	outFile.write( info + '\n' + '\t'.join( headerAr ) + '\n' )
 	for text in outMat:

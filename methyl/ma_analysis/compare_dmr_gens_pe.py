@@ -91,6 +91,7 @@ def processChrm( mDict1, mDict2, dmrs, label, minCov, chrm ):
 	return outAr
 
 def processRegion( start, end, mDict1, mDict2, minCov ):
+	l = end - start + 1
 	# if minCov = 0, use all positions regardless if covered in other sample
 	if minCov == 0:
 		cCount1, mCount1, tCount1 = regionCs( start, end, mDict1 )
@@ -108,7 +109,7 @@ def processRegion( start, end, mDict1, mDict2, minCov ):
 	# create output array
 	wm1 = ( 0.0 if tCount1 == 0 else float(mCount1) / float(tCount1) )
 	wm2 = ( 0.0 if tCount2 == 0 else float(mCount2) / float(tCount2) )
-	return [ cCount, mCount1, mCount2, tCount1, tCount2, wm1, wm2, wm1-wm2]
+	return [ cCount, l,  mCount1, mCount2, tCount1, tCount2, wm1, wm2, wm1-wm2]
 		
 def regionCs( start, end, inDict ):
 	mCount = 0
@@ -137,14 +138,14 @@ def posCs( cSet, inDict ):
 	mCount = 0
 	tCount = 0
 	for p in cSet:
-		m,t = inDict[p]
+		m,t,s,i = inDict[p]
 		mCount += m
 		tCount += t
 	return mCount, tCount
 				
 def writeOutput( outFileStr, outMat, info ):
 	#print( outMat )
-	header = info + '\nDMR\tregion\tlabel\tnum.cs\tmC.r1\tmC.r2\tt.r1\tt.r2\twm1\twm2\twm.diff\n'
+	header = info + '\nDMR\tregion\tlabel\tnum.cs\tlength\tmC.r1\tmC.r2\tt.r1\tt.r2\twm1\twm2\twm.diff\n'
 	outFile = open( outFileStr, 'w' )
 	outFile.write( header )
 	for line in outMat:

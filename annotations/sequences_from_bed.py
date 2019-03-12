@@ -120,7 +120,7 @@ def parseInputs( argv ):
 	
 
 def printHelp( ):
-	print( 'Usage: python3 sequences_from_bed.py [-m] [-s=upstream[,downstream]] <fasta_file> <bed_file>' )
+	print( 'Usage: python3 sequences_from_bed.py [-m] [-s=upstream[,downstream]] <fasta_file> <bed_file> [bed_file]*' )
 	
 
 if __name__ == "__main__":

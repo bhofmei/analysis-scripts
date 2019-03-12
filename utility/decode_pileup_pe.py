@@ -1,15 +1,16 @@
-import sys, math, glob, multiprocessing, subprocess, os, bisect, random
+import sys, multiprocessing, subprocess, os
 
 # Usage: python decode_pileup_pe.py [-o=out_id] [-p=num_proc] <pileup_file> [pileup_file]*
 ## Assumes all pileup files have information for the same positions
 
 NUMPROC=1
 
-def processInputs( pileFileStrAr, outID, numProc ):
+def processInputs( pileFileStrAr, outID, numProc, isPrint ):
 	baseNamesAr = [ os.path.basename( x ) for x in pileFileStrAr ]
 	info = '#from_script: decode_pileup_pe.py; pileup_files: ' + ','.join( baseNamesAr )
 	
-	print( 'Input files:', ', '.join( baseNamesAr ) )
+	if isPrint:
+		print( 'Input files:', ', '.join( baseNamesAr ) )
 	# get position information from first file
 	posMat = parsePileupPos( pileFileStrAr[0] )
 	nPos = len( posMat )
@@ -17,22 +18,25 @@ def processInputs( pileFileStrAr, outID, numProc ):
 	# get sample names
 	sampleNamesAr = getSampleNames( pileFileStrAr )
 	
-	print( 'Begin processing files with {:d} processors'.format( numProc ) )
+	if isPrint:
+		print( 'Begin processing files with {:d} processors'.format( numProc ) )
 	pool = multiprocessing.Pool( processes=numProc )
 	results = [ pool.apply_async( processFile, args=(x, nPos) ) for x in pileFileStrAr ]
 	outMat = [ p.get() for p in results ]
 	# need to transpose
 	outMat2 = transpose( outMat )
 	
-	if len(outMat2) != nPos:
+	if len(outMat2) != nPos and isPrint:
 		print( 'WARNING: npos and outmat dimension issue' )
 		print( nPos )
 		print( len(outMat2), len(outMat2[0]) )
 	
 	outFileStr = '{:s}_decoded_pileup.tsv'.format( outID )
-	print( 'Writing output to', outFileStr)
+	if isPrint:
+		print( 'Writing output to', outFileStr)
 	writeOutput( outFileStr, posMat, outMat2, sampleNamesAr, info )
-	print( 'Done' )
+	if isPrint:
+		print( 'Done' )
 
 def parsePileupPos( inFileStr ):
 	outMat = []
@@ -152,19 +156,27 @@ def writeOutput( outFileStr, posMat, outMat2, sampleNamesAr, info ):
 def parseInputs( argv ):
 	outID = 'out'
 	numProc = NUMPROC
+	isPrint = True
 	startInd = 0
 	
-	for i in range(min(2,len(argv)-1)):
+	for i in range(min(3,len(argv)-1)):
 		if argv[i].startswith( '-o=' ):
 			outID = argv[i][3:]
+			startInd += 1
+		elif argv[i] == '-q':
+			isPrint = False
 			startInd += 1
 		elif argv[i].startswith( '-p=' ):
 			try:
 				numProc = int( argv[i][3:] )
-				startInd += 1
+				
 			except ValueError:
-				print( 'WARNING: number of processors must be integer...using 1' )
+				print( 'WARNING: number of processors must be integer...using', NUMPROC )
 				numProc = NUMPROC
+			startInd += 1
+		elif argv[i] in [ '-h', '--help', '-help']:
+			printHelp()
+			exit()
 		elif argv[i].startswith( '-' ):
 			print( 'ERROR: {:s} is not a valid option'.format( argv[i] ) )
 			exit()
@@ -172,11 +184,24 @@ def parseInputs( argv ):
 	pileupFileStrAr = []
 	for j in range( startInd, len(argv) ):
 		pileupFileStrAr += [argv[j]]
-	processInputs( pileupFileStrAr, outID, numProc )
+	
+	processInputs( pileupFileStrAr, outID, numProc, isPrint )
 
+def printHelp():
+
+	print( 'Usage:\tpython decode_pileup_pe.py [-h] [-q] [-o=out_id] [-p=num_proc]\n\t<pileup_file> [pileup_file]*' )
+	print()
+	print( 'Required:' )
+	print( 'pileup_file\tpileup file for a sample; output from samtools pileup' )
+	print()
+	print( 'Optional:' )
+	print( '-h\t\tprint help and exit' )
+	print( '-q\t\tquiet; do not print progress' )
+	print('-o=out_id\tidentifier for output file [default "out"]' )
+	print( '-p=num_proc\tnumber of processors [default {:d}]'.format( NUMPROC) )
 
 if __name__ == "__main__":
 	if len(sys.argv) < 2 :
-		print ("Usage: python decode_pileup_pe.py [-o=out_id] [-p=num_proc] <pileup_file> [pileup_file]*")
+		printHelp()
 	else:
 		parseInputs( sys.argv[1:] )

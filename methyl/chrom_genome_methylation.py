@@ -1,6 +1,6 @@
 import sys, math, glob, multiprocessing, subprocess, os
 
-# Usage: python3.4 chrom_genome_methylation.py [-f] [-b] [-p=num_proc] [-o=out_prefix] [-c=chromosomes] [-m=meth_types] <allC_path> <sample_name> [sample_name]*
+# sage: python3.4 chrom_genome_methylation.py [-f] [-b] [-p=num_proc] [-o=out_prefix] [-c=chromosomes | -cf=fasta_index] [-m=meth_types] <allC_path> <sample_name> [sample_name]*
 # reports the weighted methylation (in all contexts) of samples for each chromosome and for the entire genome
 
 NUMPROC=1
@@ -19,7 +19,7 @@ def processInputs( allCPath, sampleNamesAr, numProc, chrmList, fastaIndex, methT
 		sampleNamesAr = readSampleFile( sampleNamesAr[0] )
 	if fastaIndex != None:
 		chrmList = readFastaIndex( fastaIndex )
-	print( '\nMethylation types: {:s}\nChromosomes: {:s}\nUsing binomial test: {:s}\nSamples included: {:s}\nOutput written to: {:s}\n'.format( ' '.join(methTypes), ' '.join(chrmList), str(binTest), ' '.join(sampleNamesAr), outFileStr ) )
+	#print( '\nMethylation types: {:s}\nChromosomes: {:s}\nUsing binomial test: {:s}\nSamples included: {:s}\nOutput written to: {:s}\n'.format( ' '.join(methTypes), ' '.join(chrmList), str(binTest), ' '.join(sampleNamesAr), outFileStr ) )
 	
 	# check for all allC files before doing any work
 	for sample in sampleNamesAr:
@@ -210,6 +210,12 @@ def parseInputs( argv ):
 		elif argv[i] == '-b':
 			binTest = True
 			startInd += 1
+		elif argv[i] == '-h':
+			printHelp()
+			exit()
+		elif argv[i].startswith('-'):
+			print('ERROR: {:s} is not a valid parameter'.format( argv[i] ))
+			exit()
 	# end for
 	if chrmList == None and fastaIndex == None:
 		chrmList = CHRMLIST
@@ -226,11 +232,24 @@ def parseInputs( argv ):
 			print( 'ERROR: only specify one file with sample names' )
 			exit()
 	processInputs( allCPath, sampleNamesAr, numProc, chrmList, fastaIndex, methTypes, outPre, sampleFile, binTest )
+
+def printHelp():
+	print ("Usage:\tpython3 chrom_genome_methylation.py [-f] [-b] \n\t[-p=num_proc] [-o=out_prefix] [-c=chromosomes | -cf=fasta_index] [-m=meth_types]\n\t<allC_path> <sample_name | sample_file> [sample_name]*")
+	print('Compute coverage per chromosome and genome wide')
+	print('Optional:')
+	print("-f\t\tsamples are listed in file (1 line per sample)")
+	print("-b\t\tcompute weighted methylation for positions passing binomial test only")
+	print("-c=chrm_list\tcomma-separated list of chromosomes to analyze [default Chr1-5]")
+	print("\tor")
+	print("-cf=fasta_index\tuse chromosomes in fasta index file")
+	print("-m=meth_types\tcomma-separated list methylation contexts to analyze [default CG,CHG,CHH,C]")
+	print("-p=num_proc\tnumber of processors to use [default 1]")
+	print("-o=out_prefix\tprefix to use for output file [default 'out']")
 	
+
 
 if __name__ == "__main__":
 	if len(sys.argv) < 3 :
-		print ("Usage: python3.4 chrom_genome_methylation.py [-f] [-b] [-p=num_proc] [-o=out_prefix] [-c=chromosomes | -cf=fasta_index] [-m=meth_types] <allC_path> <sample_name> [sample_name]")
-		print("-f\tsamples are listed in file (1 line per sample)\n-c\tcomma-separated list of chromosomes to analyze [default Chr1-5]\nor\n-cf=fasta_index\tuse chromosomes in fasta index file\n-m\tcomma-separated list methylation contexts to analyze [default CG,CHG,CHH,C]\n-p\tnumber of processors to use [default 1]\n-o\tprefix to use for output file[default 'out']\n-b\tcompute weighted methylation for positions passing binomial test only")
+		printHelp()
 	else:
 		parseInputs( sys.argv[1:] )

@@ -5,7 +5,8 @@ import sys, math, glob, multiprocessing, subprocess, os
 	subsets
 '''
 # Usage: python3.4 fraction_methylated_pe.py [-o=out_prefix] [-m=meth_types] [-c=chromosomes] [-v=min_cov] [-p=num_proc] <allC_path> <sample_name> [sample_name]*
-NUMPROC = 2
+NUMPROC = 1
+CHRMLIST=['Chr1','Chr2','Chr3','Chr4','Chr5']
 
 def processInputs( allCPath, lineNamesAr, outPre, minCov, chrmList, mTypes, numProc ):
 
@@ -28,7 +29,7 @@ def processInputs( allCPath, lineNamesAr, outPre, minCov, chrmList, mTypes, numP
 		totalDict = combineAnalyzeDicts( totalDict, d )
 	
 	# output
-	info = '#min-coverage:{:d}_chrom-included:{:s}'.format( minCov, ','.join( chrmList ) )
+	info = '#from_script:fraction_methylated_pe.py; min_coverage:{:d}; chrom_included:{:s}'.format( minCov, ','.join( chrmList ) )
 	print( 'Writing output...' ) 
 	writeOutput( outFileStr, totalDict, lineNamesAr, info )
 	print( 'Done.' )
@@ -184,7 +185,7 @@ def writeOutput( outFileStr, totalDict, lineNamesAr, info ):
 	
 	outFile = open( outFileStr, 'w' )
 	# header - mType line num_pos_meth num_pos_unmeth num_pos_na weighted_meth_meth weighted_meth_unmeth weighted_meth_overall
-	header = 'meth.type\tline.name\tnum.pos.meth\tnum.pos.unmeth\tnum.pos.na\tweighted.meth\tweighted.unmeth\tweighted.overall\n{:s}\n'.format( info )
+	header = '{:s}\nmeth.type\tline.name\tnum.pos.meth\tnum.pos.unmeth\tnum.pos.na\tweighted.meth\tweighted.unmeth\tweighted.overall\n'.format( info )
 	outFile.write( header )
 	
 	# loop through meth types
@@ -206,7 +207,7 @@ def parseInputs( argv ):
 	outPre = 'frac_pos_meth'
 	minCov = 0
 	numProc = NUMPROC
-	chrmList = ['Chr1','Chr2','Chr3','Chr4','Chr5']
+	chrmList = CHRMLIST
 	startInd = 0
 	
 	for i in range(min(len(argv)-2, 5) ):
