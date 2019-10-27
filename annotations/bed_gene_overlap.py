@@ -100,7 +100,8 @@ def readGFF( gffFileStr ):
 		elif lineAr[2] in ['three_prime_UTR', 'five_prime_UTR']:
 			utrDict = addToDict( utrDict, chrm, (start, end, strand, currGene) )
 		elif lineAr[2] in ncRNATypes:
-			ncrnaDict = addToDict( ncrnaDict, chrm, (start, end, strand, currGene) )
+			ncname = searchID(lineAr[8])
+			ncrnaDict = addToDict( ncrnaDict, chrm, (start, end, strand, ncname) )
 		else:	# te, repeat
 			repeatName = searchID( lineAr[8] )
 			repeatDict = addToDict( repeatDict, chrm, (start, end, repeatName) )
@@ -111,7 +112,7 @@ def readGFF( gffFileStr ):
 	return geneDict, cdsDict, intronDict, utrDict, repeatDict, ncrnaDict, chrmDict
 
 def searchID( notesStr ):
-	search = "ID="
+	search = "Name="
 	index = notesStr.find(search)
 	adIndex = index + len(search)
 	endIndex = notesStr[adIndex:].find(';')
@@ -284,6 +285,8 @@ def readBedFile( bedFileStr, featDict, lowerFractionCovered, bedAssignStr, isSin
 	
 	bedOutFile = open( bedAssignStr, 'w' )
 	headerAr = ['chrm','start','end','name','features', 'genes']
+	if isSingle:
+		headerAr += ['maxGeneFeat', 'maxGene']
 	#bedOutFile.write( '#{:s}\t{:s}\n'.format( '\t'.join( headerAr ), '\t'.join(TYPES) ) )
 	bedOutFile.write( '#{:s}\n'.format( '\t'.join(headerAr) ) )
 	
@@ -315,13 +318,13 @@ def readBedFile( bedFileStr, featDict, lowerFractionCovered, bedAssignStr, isSin
 			elif gName != '':
 				geneDict[gName] += 1
 		
-		typeAr, fType, geneAr, fGene = defineType( tmpDict, geneDict, (end-start+1), lowerFractionCovered)
+		typeAr, fType, gfType, geneAr, fGene, gfGene = defineType( tmpDict, geneDict, (end-start+1), lowerFractionCovered)
 		typeAr.sort()
 		mType = '-'.join(typeAr).replace('*','')
 		
 		# write output
 		if isSingle:
-			outStr = '{:s}\t{:d}\t{:d}\t{:s}\t{:s}\t{:s}\n'.format( chrm, start, end, lineAr[3], fType, fGene )
+			outStr = '{:s}\t{:d}\t{:d}\t{:s}\t{:s}\t{:s}\t{:s}\t{:s}\n'.format( chrm, start, end, lineAr[3], fType, fGene, gfType, gfGene )
 		else:
 			outStr = '{:s}\t{:d}\t{:d}\t{:s}\t{:s}\t{:s}\n'.format( chrm, start, end, lineAr[3], ','.join(typeAr), ','.join( geneAr ) )
 		bedOutFile.write( outStr )
@@ -355,6 +358,9 @@ def defineType( inDict, geneDict, rLen, lowFrac ):
 	maxSize = -1
 	maxFeat = ''
 	maxGene = ''
+	genicMaxSize = -1
+	genicMaxFeat = ''
+	genicMaxGene = ''
 	for t in inDict.keys():
 		val = inDict[t]
 		fVal = t[0]
@@ -376,10 +382,17 @@ def defineType( inDict, geneDict, rLen, lowFrac ):
 			maxSize = val
 			maxFeat = fVal
 			maxGene = gName
+		# if not x, update genic max for single
+		if fVal != 'x' and val > genicMaxSize:
+			genicMaxSize = val
+			genicMaxFeat = fVal
+			genicMaxGene = gName
+			
 	# end for t
-	
-	return typeAr, maxFeat, list(geneAr), maxGene
-	
+	if maxFeat == 'g':
+		print(maxGene)
+		
+	return typeAr, maxFeat, genicMaxFeat, list(geneAr), maxGene, genicMaxGene	
 
 def buildFeatureDict( ):
 	outDict = {}

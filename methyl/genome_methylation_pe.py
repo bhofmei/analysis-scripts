@@ -1,6 +1,6 @@
 import sys, math, glob, multiprocessing, subprocess, os, gzip
 
-# sage: python3.4 genome_methylation.py [-q] [-f] [-b] [-p=num_proc] [-o=out_prefix] [-i=include_chrms | -x=exclude_chrms] [-m=meth_types] <allC_path> <sample_name> [sample_name]*
+# sage: python3.4 genome_methylation_pe.py [-q] [-f] [-b] [-p=num_proc] [-o=out_prefix] [-i=include_chrms | -x=exclude_chrms] [-m=meth_types] <allC_path> <sample_name> [sample_name]*
 # reports the weighted methylation (in all contexts) of samples genome-wide
 
 NUMPROC=1

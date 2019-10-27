@@ -8,9 +8,9 @@ METH=0.3
 FDR=0.05
 LENT=40
 
-# Usage: python dmr_gen_ztesting.py [-h] [-q] [-wm] [-n=num_c_thresh] [-m=meth_thresh] [-f=fdr] [-d=length_thresh] [-o=outID] <in_file>
+# Usage: python dmr_pw_ztesting.py [-h] [-q] [-wm] [-a] [-n=num_c_thresh] [-m=meth_thresh] [-f=fdr] [-d=length_thresh] [-o=outID] <in_file>
 
-def processInputs( inFileStr, outID, numC, mThresh, fdrThresh, lenThresh, isRawWM, isPrint ):
+def processInputs( inFileStr, outID, numC, mThresh, fdrThresh, lenThresh, isRawWM, adjustAll, isPrint ):
 	if isPrint:
 		print( 'Input file', os.path.basename( inFileStr ) )
 		print( 'Number of C\'s threshold:', numC )
@@ -30,10 +30,10 @@ def processInputs( inFileStr, outID, numC, mThresh, fdrThresh, lenThresh, isRawW
 	if isPrint:
 		print( ' Found {:d} DMRs'.format(len(df.index.unique()) ) )
 		print( ' Filtering' )
-	dfD = df.groupby( df.index )
-	dfF = dfD.filter( filterDMR, nc=numC, wm=mThresh, ln=lenThresh, ir=isRawWM )
+	dmrGroup = df.groupby( df.index )
+	dfF = dmrGroup.filter( filterDMR, nc=numC, wm=mThresh, ln=lenThresh, ir=isRawWM )
 	dfFC = dfF.copy()
-	del df, dfD, dfF
+	del df, dmrGroup, dfF
 
 	nDMRs = len(dfFC.index.unique())
 	if isPrint:
@@ -42,13 +42,23 @@ def processInputs( inFileStr, outID, numC, mThresh, fdrThresh, lenThresh, isRawW
 	dfFC['pvalue'] = dfFC.apply( computePvalue, axis=1 )
 
 	nTests = dfFC.shape[0]
-	if isPrint:
-		print( 'Applying correction for {:d} tests'.format( nTests ) )
-	dfFC['pvalue.adjust'] = pvalueAdjust( dfFC['pvalue'] )
+	if adjustAll:
+		if isPrint:
+			print( 'Applying correction for {:d} tests'.format( nTests ) )
+		dfFC['pvalue.adjust'] = pvalueAdjust( dfFC['pvalue'] )
+	# group by comparison then correct for p-value
+	else:
+		if isPrint:
+			print('Applying correction by comparison for {:d} tests'.format(nDMRs) )
+		dfFC.set_index([dfFC.index,'label'], inplace=True)
+		labGroup = dfFC.groupby(level='label')
+		dfFC['pvalue.adjust'] = labGroup['pvalue'].transform(pvalueAdjust, nTests=nDMRs)
+		dfFC.reset_index(level='label',inplace=True)
+		print(dfFC.head())
+		
 	dfFC['pvalue.log'] = -1 * np.log10( dfFC['pvalue.adjust'] )
-
 	if isPrint:
-		print( 'Analyzing for switches' )
+		print( 'Analyzing for PW differences' )
 	dfFC['wm.change'] = dfFC.apply( lambda x: ( float(x['wm1'] - x['wm2']) / float( (1.0 if x['wm1']==0 else x['wm1']) ) ), axis=1 )
 	if isRawWM:
 		dfFC['mThresh'] = mThreshold(dfFC['wm.diff'],wm=mThresh)
@@ -56,21 +66,21 @@ def processInputs( inFileStr, outID, numC, mThresh, fdrThresh, lenThresh, isRawW
 		dfFC['mThresh'] = mThreshold( dfFC['wm.change'], wm=mThresh )
 	logThresh = -1 * math.log10( fdrThresh )
 	dfFC['pThresh'] = pThreshold( dfFC['pvalue.log'], pt=logThresh )
-	dfFC['isSwitch'] = dfFC.apply( lambda x: (x['mThresh'] and x['pThresh']), axis=1)
+	dfFC['isPWDiff'] = dfFC.apply( lambda x: (x['mThresh'] and x['pThresh']), axis=1)
 
 	if isPrint:
-		print( 'Counting switches' )
+		print( 'Counting PW differences' )
 	dfFG = dfFC.groupby( [dfFC.index, 'region'] )
-	dfSw = dfFG.agg( {'isSwitch': np.sum, 'length': np.mean} )
-	dfSw.rename(columns={'isSwitch':'switch.counts'},inplace=True)
-	dfSw['switches'] = dfFG.apply(switchLabels)
+	dfSw = dfFG.agg( {'isPWDiff': np.sum, 'length': np.mean} )
+	dfSw.rename(columns={'isPWDiff':'diff.counts'},inplace=True)
+	dfSw['diffs'] = dfFG.apply(switchLabels)
 	
 	dfSG = dfFC.groupby('label')
 	dfSL = dfSG.apply(switchRegionLengths)
 
 	dfSG = dfFC.groupby(['label'])
-	dfSF = pd.DataFrame( {'freq': np.bincount( dfSw['switch.counts'] ), 'length': np.bincount( dfSw['switch.counts'], weights=dfSw['length'] ) } )
-	dfSF.index.name = 'switch.counts'
+	dfSF = pd.DataFrame( {'freq': np.bincount( dfSw['diff.counts'] ), 'length': np.bincount( dfSw['diff.counts'], weights=dfSw['length'] ) } )
+	dfSF.index.name = 'diff.counts'
 
 	dfSw.drop(columns=['length'], inplace=True )
 	dfSw.reset_index( inplace=True )
@@ -81,9 +91,9 @@ def processInputs( inFileStr, outID, numC, mThresh, fdrThresh, lenThresh, isRawW
 		t = os.path.basename( inFileStr )
 		outID = t.replace('.tsv','')
 
-	info = '#from_script: dmr_gen_ztesting.py; in_file: {:s}; num_c_thresh: {:d}; wei_meth_thresh: {:g}; raw_wei_meth: {:s}; fdr: {:g}; len_thresh: {:d}; dmr_count: {:d}; mult_test_count: {:d}\n'.format( os.path.basename( inFileStr ), numC, mThresh, str(isRawWM), fdrThresh, lenThresh, nDMRs, nTests )
+	info = '#from_script: dmr_pw_ztesting.py; in_file: {:s}; num_c_thresh: {:d}; wei_meth_thresh: {:g}; raw_wei_meth: {:s}; fdr: {:g}; len_thresh: {:d}; dmr_count: {:d}; adjust_all: {:s}; mult_test_count: {:d}\n'.format( os.path.basename( inFileStr ), numC, mThresh, str(isRawWM), fdrThresh, lenThresh, nDMRs, str(adjustAll), (nTests if adjustAll else nDMRs) )
 
-	outFileStrAr = [ outID + '_' + x + '.tsv' for x in ['full', 'switches', 'sample_switches', 'switch_counts' ] ]
+	outFileStrAr = [ outID + '_' + x + '.tsv' for x in ['pw-full', 'pw-diff', 'sample_pw-diff', 'pw-diff_counts' ] ]
 	if isPrint:
 		print( 'Writing outputs to', ', '.join( outFileStrAr ) )
 	for outFileStr in outFileStrAr:
@@ -134,11 +144,14 @@ def computePvalue( data ):
 	zScore = np.asarray(data[['z.score']])[0]
 	return 1.0 - stats.norm.cdf(zScore)
 
-def pvalueAdjust( pvalues ):
+def pvalueAdjust( pvalues, nTests=None ):
 	''' expects a list/series/array of p-values
 		returns list of adjust pvalues
 	'''
 	n = len(pvalues)
+	if nTests != None and n != nTests:
+		return np.full(n, -1)
+	
 	values = [ (p,i) for i,p in enumerate(pvalues) ]
 	values.sort()
 	values.reverse()
@@ -176,7 +189,7 @@ def pThreshold( data, pt ):
 def switchLabels( data ):
 	outAr = []
 	for row_index, row in data.iterrows():
-		isSwitch = row['isSwitch']
+		isSwitch = row['isPWDiff']
 		label = row['label']
 		if isSwitch:
 			outAr += [label]
@@ -187,12 +200,12 @@ def switchRegionLengths( data ):
 	nSwitches = 0
 	nLength = 0
 	for row_index, row in data.iterrows():
-		isSwitch = row['isSwitch']
+		isSwitch = row['isPWDiff']
 		rLen = row['length']
 		if isSwitch:
 			nSwitches += 1
 			nLength += rLen
-	return pd.Series([nSwitches, nLength], index=['switch.counts','region.lengths'])
+	return pd.Series([nSwitches, nLength], index=['diff.counts','region.lengths'])
 
 def parseInputs( argv ):
 	numC = NUMC
@@ -202,14 +215,18 @@ def parseInputs( argv ):
 	isRawWM= False
 	outID = None
 	isPrint = True
+	adjustAll = False
 	startInd = 0
 
-	for i in range(min(7,len(argv)-1)):
+	for i in range(min(7,len(argv))):
 		if argv[i].startswith( '-o=' ):
 			outID = argv[i][3:]
 			startInd += 1
 		elif argv[i] == '-q':
 			isPrint = False
+			startInd += 1
+		elif argv[i] == '-a':
+			adjustAll = True
 			startInd += 1
 		elif argv[i].startswith( '-m=' ):
 			try:
@@ -253,10 +270,11 @@ def parseInputs( argv ):
 	# end for
 	inFileStr = argv[startInd]
 
-	processInputs( inFileStr, outID, numC, mThresh, fdrThresh, lenThresh, isRawWM, isPrint )
+	processInputs( inFileStr, outID, numC, mThresh, fdrThresh, lenThresh, isRawWM, adjustAll, isPrint )
 
 def printHelp():
-	print( 'Usage:\tpython dmr_gen_ztesting.py [-h] [-q] [-wm] [-n=num_c_thresh]\n\t[-m=meth_thresh] [-d=length_thresh] [-f=fdr] [-o=outID] <in_file>' )
+	print( 'Usage:\tpython dmr_gen_ztesting.py [-h] [-q] [-wm] [-a]') 	
+	print('[-n=num_c_thresh] [-m=meth_thresh] [-d=length_thresh] [-f=fdr] [-o=outID] <in_file>' )
 	print()
 	print( 'Required:' )
 	print( 'in_file\t\ttab-delimited file of DMRs and read counts' )
@@ -265,6 +283,7 @@ def printHelp():
 	print( '-h\t\tprint help and exit' )
 	print( '-q\t\tquiet; do not print progress' )
 	print( '-wm\t\tmethylation threshold is for raw methyl difference\n\t\tnot percent difference' )
+	print( '-a\t\tmultiple test correction for ALL tests; default corrects per-comparison' )
 	print( '-n=num_c_thresh\tmin number of cytosines in region to be considered\n\t\tfor analysis [default {:d}]'.format(NUMC) )
 	print( '-d=len_thresh\tmin length of dmr in bp [default {:d}]'.format(LENT) )
 	print( '-m=meth_thresh\tmin methylation change btwn generations to be\n\t\tconsidered a switch [default {:g}]'.format(METH)  )

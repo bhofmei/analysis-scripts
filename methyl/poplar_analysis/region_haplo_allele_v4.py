@@ -1,40 +1,40 @@
-import sys, math, glob, multiprocessing, subprocess, os, bisect, random, gzip
+import sys, math, os, bisect, random, gzip
 import pysam
+from DmrPos import *
+from bisect_func import *
 
-# Usage: region_haplo_allele_v3.py [-q] [-h] [-z] [-rm-snps] [-d] [-u=unmethyl_val] [-m=methyl_val] [-o=out_id] [-v=thresh] <pos_file> <bed_file>  <bam_file>
+# Usage: region_haplo_allele_v4.py [-q] [-h] [-z] [-rm-snps] [-d] [-b] [-u=unmethyl_val] 
+# [-p=min_pos_read][r=min_read]
+# [-m=methyl_val] [-o=out_id] [-v=thresh] <pos_file> <bed_file>  <bam_file>
 
 #TRANSITIONS = ['uu', 'uM', 'Mu', 'MM','u.','M.','.u','.M']
 #TRANSITIONS = ['uu', 'uM', 'Mu', 'MM']
 MTHRESH = 0.35
 UNMETHYL = 0.25
 METHYL = 0.75
+MINREADS=10
+MINPOS=2
 
-def processInputs( bamFileStr, bedFileStr, posFileStr, outID, mThresh, debugFile, keepSNPs, unmethylVal, methylVal, isCompress, isPrint ):
+def processInputs( bamFileStr, dmrPosFileStr, outID, mThresh, debugFile, keepSNPs, unmethylVal, methylVal, minReads, minPos, isBinary, isCompress, isPrint ):
 	
 	if isPrint:
-		print( 'Position file:', os.path.basename(posFileStr) )
+		print( 'DMR-Position file:', os.path.basename(dmrPosFileStr) )
 		print( 'BAM file:', os.path.basename(bamFileStr) )
-		print( 'BED file:', os.path.basename(bedFileStr) )
 		print( 'Methylation threshold: {:.3f}'.format(mThresh) )
 		print( 'Keep reads with SNPs:', keepSNPs )
 		print( 'Max unmethyl value: {:.3f}'.format(unmethylVal) )
 		print( 'Min methyl value: {:.3f}'.format(methylVal) )
+		print( 'Min reads: {:d}'.format(minReads) )
+		print( 'Min positions per read: {:d}'.format(minPos) )
+		print( 'Keep only binary reads:', str(isBinary) )
 	
 	# check BAM file/index
 	checkBAM( bamFileStr )
-	
-	# get DMRs
-	dmrAr = readBED( bedFileStr )
-	if isPrint:
-		print( len(dmrAr), 'regions found' )
-	
-	# get keep positions - 0-based
-	posDict = readPosFile( posFileStr )
-	
+
 	# determine keep positions in each DMR
-	dmrPosAr = intersectRegionsPos( dmrAr, posDict )
+	dmrPosAr = readDmrPosFile( dmrPosFileStr )
 	if isPrint:
-		print(len(dmrPosAr), 'regions remaining')
+		print( len(dmrPosAr), 'regions found' )
 	
 	# create pysam bam and fasta objects
 	bamFile = pysam.AlignmentFile( bamFileStr, 'rb' )
@@ -44,14 +44,14 @@ def processInputs( bamFileStr, bedFileStr, posFileStr, outID, mThresh, debugFile
 	debugMatrix = []
 	genoMatrix = []
 	for dmr in dmrPosAr:
-		resDict, debStr = processRegion( bamFile, dmr, mThresh, keepSNPs, isPrint )
+		resDict, debStr = processRegion( bamFile, dmr, mThresh, keepSNPs, minPos, isBinary, isPrint )
 		#outMatrix += [resDict]
 		debugMatrix += [debStr]
 		# format for normal output
 		outStr = formatForOutput( dmr, resDict )
 		outMatrix += [outStr]
 		# call epigenotype and format for output
-		genoStr = assignEpigeno( dmr, resDict, unmethylVal, methylVal )
+		genoStr = assignEpigeno( dmr, resDict, unmethylVal, methylVal, minReads )
 		genoMatrix += [genoStr]
 	
 	# close bam and fasta objects
@@ -61,18 +61,18 @@ def processInputs( bamFileStr, bedFileStr, posFileStr, outID, mThresh, debugFile
 	if outID == None:
 		outID = os.path.basename(bamFileStr).replace('.bam', '')
 		
-	outFileStr = outID + '_dmr_reads-v3.tsv'
+	outFileStr = outID + '_dmr_reads-v4.tsv'
 	outFileStr += '.gz' if isCompress else ''
 	genoFileStr = outFileStr.replace('.tsv', '_geno.tsv')
 	if isPrint:
 		print( 'Writing output to', outFileStr)
 		print( 'Writing genotypes to', genoFileStr )
 	
-	info = '#from_script: region_haplo_allele_v3.py; bed_file:{:s}; starting_regions:{:d}; remaining_regions:{:d}; mThresh:{:.3f}; keep_snps:{:s}; unmethyl_val:{:.3f}; methyl_val:{:.3f}\n'.format(os.path.basename(bedFileStr), len(dmrAr), len(dmrPosAr), mThresh, str(keepSNPs), unmethylVal, methylVal)
+	info = '#from_script: region_haplo_allele_v4.py; dmr_file:{:s}; mThresh:{:.3f}; keep_snps:{:s}; unmethyl_val:{:.3f}; methyl_val:{:.3f}; min_reads:{:d}; min_pos_read:{:d}; is_binary:{:s}\n'.format(os.path.basename(dmrPosFileStr), mThresh, str(keepSNPs), unmethylVal, methylVal, minReads, minPos, str(isBinary))
 	outHeader = ['chrm', 'start', 'end', 'label', 'mType', 'count']
 	writeOutput( outFileStr, outMatrix, info, outHeader, isCompress )
 	
-	genoHeader = ['chrm', 'start', 'end', 'label', 'unmethylReads', 'methylReads', 'epigenotype']
+	genoHeader = ['chrm', 'start', 'end', 'label', 'unmethylReads', 'methylReads', 'unmethylLevel', 'methylLevel', 'epigenotype']
 	writeOutput( genoFileStr, genoMatrix, info, genoHeader, isCompress )
 	
 	if debugFile:
@@ -95,126 +95,37 @@ def checkBAM( bamFileStr ):
 		print('WARNING: BAM index file does not exist...creating')
 		pysam.index( bamFileStr )
 	return True
-	
-def readBED( bedFileStr ):
-	
-	bedFile = open(bedFileStr, 'r' )
-	outAr = []
-	count = 1
-	
-	for line in bedFile:
-		lineAr = line.rstrip().split('\t')
-		# (0) chrm (1) start (2) end (3) name?
-		if len(lineAr) < 3:
-			continue
-		chrm = lineAr[0]
-		start = int(lineAr[1])
-		end = int(lineAr[2])
-		dmrName = ( 'DMR-'+count if len(lineAr) < 4 else lineAr[3] )
-		outAr += [(chrm, start, end, dmrName)]
-		count += 1
-	# end for line
-	bedFile.close()
-	return outAr
 
-def readPosFile( posFileStr ):
-	'''
-		Pos file is currently 1-indexed and we need to convert it to 0-indexed
-	'''
-	
-	if posFileStr.endswith('.gz'):
-		posFile = gzip.open( posFileStr, 'rt' )
+def readDmrPosFile( dmrPosFileStr ):
+	if dmrPosFileStr.endswith('.gz'):
+		inFile = gzip.open( dmrPosFileStr, 'rt' )
 	else:
-		posFile = open( posFileStr, 'r' )
-	outDict = {}
+		inFile = open( dmrPosFileStr, 'r' )
 	
-	for line in posFile:
+	outAr = []
+	
+	for line in inFile:
 		lineAr = line.rstrip().split('\t')
 		if line.startswith('#') or lineAr[1].isdigit() == False:
 			continue
 		chrm = lineAr[0]
-		pos = int(lineAr[1]) - 1
-		strand = lineAr[2]
-		
-		if outDict.get(chrm) == None:
-			outDict[chrm] = []
-		#outDict[chrm] += [pos]
-		bisect.insort( outDict[chrm], (pos,strand) )
+		start = int(lineAr[1])
+		end = int(lineAr[2])
+		label = lineAr[3]
+		newRegion = DmrPos( chrm, start, end, label=label )
+		posAr = [int(x) for x in lineAr[4].split(',')]
+		negAr = [int(x) for x in lineAr[5].split(',')]
+		newRegion.setPos( posAr, negAr )
+		outAr += [ newRegion ]
 	# end for line
-	posFile.close()
-	return outDict
-
-def intersectRegionsPos( dmrAr, posDict ):
-	outAr = []
-	
-	# loop through regions
-	for region in dmrAr:
-		chrm, start, end, label = region
-		
-		# pos array for chrm
-		if posDict.get(chrm) == None:
-			print('WARNING: no valid positions for chrm', chrm, 'but DMR given')
-			continue
-		posAr = posDict.get(chrm)
-		
-		# index of first position >= start
-		sIndex = bisect_ge( posAr, (start,'') )
-		# index of last position < end
-		eIndex = bisect_lt( posAr, (end,'') )
-		
-		# either is None, or eindex <= sIndex , only 1 valid position, so move on
-		if eIndex == None or sIndex == None or eIndex <= sIndex:
-			continue
-		
-		# otherwise, get the positions
-		cPos = posAr[ sIndex:eIndex+1 ]
-		
-		# sort the positions into strands
-		posPlus = []
-		posMinus = []
-		for t in cPos:
-			if t[1] == '+':
-				posPlus += [t[0]]
-			elif t[1] == '-':
-				posMinus += [t[0]]
-		# if only 1 position for both strands, don't keep it
-		if len(posPlus) <= 1 or len(posMinus) <= 1:
-			continue
-		outAr += [(chrm, start, end, label, posPlus, posMinus)]
-
-	# end for region
+	inFile.close()
 	return outAr
-
-def bisect_ge(a, x):
-	# leftmost (first) INDEX greater than or equal to x
-	# return None if not found
-	i = bisect.bisect_left(a, x)
-	if i != len(a):
-		return i
-	return None
-
-def bisect_lt(a, x):
-	# rightmost (last) INDEX less than x
-	# return None if not found
-	i = bisect.bisect_left(a, x)
-	if i:
-		return i-1
-	return None
-
-def bisect_index(a, x):
-	try:
-		i = bisect.bisect_left(a, x)
-		if i != len(a) and a[i] == x:
-			return i
-		return None
-	except TypeError:
-		if x in a:
-			return a.index(x)
-		else:
-			return None
 			
-def processRegion( bamFile, dmrRegion, mThresh, keepSNPs, isPrint ):
-	chrm, start, end, label, posPlus, posMinus = dmrRegion
+def processRegion( bamFile, dmrRegion, mThresh, keepSNPs, minPos, isBinary, isPrint ):
+	#chrm, start, end, label, posPlus, posMinus = dmrRegion
+	chrm, start, end, label = dmrRegion.getInfo()
+	posPlus = dmrRegion.posAr
+	posMinus = dmrRegion.negAr
 	outDict = {'u': 0, 'M': 0, 'x': 0}
 	
 	# get reads
@@ -228,11 +139,11 @@ def processRegion( bamFile, dmrRegion, mThresh, keepSNPs, isPrint ):
 		
 		# determine if read is 'methylated' or 'unmethylated'
 		if isRev:
-			w = computeReverse( posMinus, rPos, rSeq, keepSNPs )
-			ww = encodeReverseRead( posMinus, rPos, rSeq)
+			w = computeReverse( posMinus, rPos, rSeq, keepSNPs, minPos, isBinary )
+			ww = encodeReverseRead( posMinus, rPos, rSeq )
 			w1 = '- |' + ('' if ww == None else ww) + '|'
 		else:
-			w = computeForward( posPlus, rPos, rSeq, keepSNPs )
+			w = computeForward( posPlus, rPos, rSeq, keepSNPs, minPos, isBinary )
 			ww = encodeForwardRead( posPlus, rPos, rSeq) 
 			w1 = '+ |' + ('' if ww == None else ww) + '|'
 		
@@ -271,7 +182,7 @@ def encodeForwardRead( posList, readPos, readSeq ):
 	# end for p
 	return (outStr if found > 1 else None)
 
-def computeForward( posList, readPos, readSeq, keepSNPs ):
+def computeForward( posList, readPos, readSeq, keepSNPs, minPos, isBinary ):
 	uC = 0
 	mC = 0
 	#print('+:', posList)
@@ -288,8 +199,10 @@ def computeForward( posList, readPos, readSeq, keepSNPs ):
 		elif not keepSNPs:
 			return -1 # SNP and we are throwing away those reads
 	# end for p
-	if mC + uC < 1:
+	if mC + uC < minPos:
 		return -1 # not enough positions
+	elif isBinary and mC != 0 and uC != 0:
+		return -1 # mixed methylation
 	return float(mC)/ float(mC + uC)
 	
 def encodeReverseRead( posList, readPos, readSeq ):
@@ -311,7 +224,7 @@ def encodeReverseRead( posList, readPos, readSeq ):
 	# end for p
 	return (outStr if found > 1 else None)
 
-def computeReverse( posList, readPos, readSeq, keepSNPs ):
+def computeReverse( posList, readPos, readSeq, keepSNPs, minPos, isBinary ):
 	uC = 0
 	mC = 0
 	#print('-:', posList)
@@ -329,12 +242,15 @@ def computeReverse( posList, readPos, readSeq, keepSNPs ):
 			return -1 # SNP and we are throwing away those reads
 	# end for p
 	#print('--', mC, uC)
-	if mC + uC < 1:
+	if mC + uC < minPos:
 		return -1 # not enough positions
+	elif isBinary and mC != 0 and uC != 0:
+		return -1 # mixed methylation
 	return float(mC)/ float(mC + uC)
 
 def formatForOutput( dmr, inDict ):
-	chrm, start, end, label, posPlus, posMinus = dmr
+	#chrm, start, end, label, posPlus, posMinus = dmr
+	chrm, start, end, label = dmr.getInfo()
 	outStr = ''
 	
 	for x in ['u', 'M', 'x']:
@@ -343,22 +259,27 @@ def formatForOutput( dmr, inDict ):
 	
 	return outStr
 	
-def assignEpigeno( dmr, inDict, minVal, maxVal ):
-	chrm, start, end, label, posPlus, posMinus = dmr
+def assignEpigeno( dmr, inDict, minVal, maxVal, minReads ):
+	#chrm, start, end, label, posPlus, posMinus = dmr
+	chrm, start, end, label = dmr.getInfo()
 	
 	m = inDict['M']
 	u = inDict['u']
 	n = m + u
-	uLevel = float(u) / n
-	rLevel = float(m) / n
-	if rLevel <= minVal:
+	uLevel = -1 if n < minReads else float(u) / n
+	rLevel = -1 if n < minReads else float(m) / n
+	if n < minReads:
+		#uLevel = -1
+		#rLevel = -1
+		geno = 'NA'
+	elif rLevel <= minVal:
 		geno = 'uu' # unemthylated
 	elif rLevel <= maxVal:
 		geno = 'Mu' # heterozygous methylated
 	else:
 		geno = 'MM' # methylated
 	
-	outStr = '{:s}\t{:d}\t{:d}\t{:s}\t{:.4f}\t{:.4f}\t{:s}\n'.format(chrm, start, end, label, uLevel, rLevel, geno )
+	outStr = '{:s}\t{:d}\t{:d}\t{:s}\t{:d}\t{:d}\t{:.4f}\t{:.4f}\t{:s}\n'.format(chrm, start, end, label, u, m, uLevel, rLevel, geno )
 	return outStr
 
 def writeOutput( outFileStr, outMat, info, headerAr, isCompress ):
@@ -386,6 +307,9 @@ def parseInputs( argv ):
 	keepSNPs = True
 	debugFile = False
 	isCompress = False
+	isBinary = False
+	minReads = MINREADS
+	minPos = MINPOS
 	isPrint = True
 	startInd = 0
 	
@@ -398,6 +322,9 @@ def parseInputs( argv ):
 			exit()
 		elif argv[i] == '-z':
 			isCompress = True
+			startInd += 1
+		elif argv[i] == '-b':
+			isBinary = True
 			startInd += 1
 		elif argv[i] == '-d':
 			debugFile = True
@@ -432,9 +359,23 @@ def parseInputs( argv ):
 				print('WARNING: methylation threshold parameter invalid...using default', MTHRESH)
 				mThresh = MTHRESH
 			startInd += 1
+		elif argv[i].startswith('-r='):
+			try:
+				minReads = int(argv[i][3:])
+			except ValueError:
+				print( 'WARNING: min read parameter invalid...using default', MINREADS)
+				minReads = MINREADS
+			startInd += 1
+		elif argv[i].startswith('-p='):
+			try:
+				minPos = int(argv[i][3:])
+			except ValueError:
+				print( 'WARNING: min positions parameter invalid...using default', MINPOS)
+				minPos = MINPOS
+			startInd += 1
 		elif argv[i].startswith('-'):
 			print('ERROR: "{:s}" is not a valid parameter\nUse -h to see valid parameters'.format(argv[i]))
-			
+			startInd += 1			
 		# end elif
 	# end for
 	
@@ -443,14 +384,13 @@ def parseInputs( argv ):
 		print('ERROR: Methylated genotype value ({:.3f}) must be greater than unmethylated value ({:.3f})...Use the defaults or check parameters'.format(methylVal, unmethylVal))
 		exit()
 	
-	posFile = argv[startInd]
-	bedFile = argv[startInd+1]
-	bamFile = argv[startInd +2]
+	dmrPosFile = argv[startInd]
+	bamFile = argv[startInd +1]
 	
-	processInputs( bamFile, bedFile, posFile, outID, mThresh, debugFile, keepSNPs, unmethylVal, methylVal,  isCompress, isPrint )
+	processInputs( bamFile, dmrPosFile, outID, mThresh, debugFile, keepSNPs, unmethylVal, methylVal, minReads, minPos, isBinary, isCompress, isPrint  )
 	
 def printHelp():
-	print('Usage: region_haplo_allele_v3.py [-q] [-h] [-z] [-rm-snps] [-d] [-u=unmethyl_val] [-m=methyl_val] [-o=out_id] [-v=thresh] <pos_file> <bed_file>  <bam_file>')
+	print('Usage: region_haplo_allele_v3.py [-q] [-h] [-z] [-b] [-rm-snps] [-d] [-u=unmethyl_val] [-m=methyl_val] [-o=out_id] [-v=thresh] <dmr_pos_file>  <bam_file>')
 
 
 if __name__ == "__main__":
